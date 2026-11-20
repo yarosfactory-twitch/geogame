@@ -1421,7 +1421,8 @@ function showRelations(){
   if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
   selectedId = null; alOpen = null; alFilter = null; resFilter = null;
   relMode = c; restyleAll();
-  const list = Object.keys(S.countries).filter(x => x !== c).map(x => [x, relOf(c, x)]).filter(x => x[1] !== 0).sort((a, b) => b[1] - a[1]);
+  const alive = new Set(); for (const r in S.regions) alive.add(S.regions[r][0]);   // поглинуті країни (без регіонів) не показуємо
+  const list = Object.keys(S.countries).filter(x => x !== c && alive.has(x)).map(x => [x, relOf(c, x)]).filter(x => x[1] !== 0).sort((a, b) => b[1] - a[1]);
   const row = x => "<div class='al relrow' onclick='showCountryRel(\"" + x[0] + "\")'><span>" + esc(cname(x[0])) + "</span><span>" + relDeltaTxt(c, x[0]) + relTxt(x[1]) + "</span></div>";
   let h = "<h2>Відносини</h2><div class='sub'>Очима: <b>" + esc(cname(c)) + "</b> · зелений — друзі, червоний — вороги, сірий — нейтрально</div>";
   h += "<div class='legend'><i style='background:" + relColor(-100) + "'></i>−100<i style='background:" + relColor(0) + "'></i>0<i style='background:" + relColor(100) + "'></i>+100</div>";
