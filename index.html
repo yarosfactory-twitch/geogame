@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<title>yarosfactory — карта світу</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=PT+Serif:wght@700&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --ocean:#16283a; --panel:rgba(20,28,38,.95); --line:#2e3b49; --ink:#e8e2d0; --muted:#9aa4ae; --gold:#c9a75a; --chron:400px; }
+  html, body { margin:0; height:100%; background:var(--ocean); font-family:"PT Sans", Arial, sans-serif; color:var(--ink); overflow:hidden; }
+  #map { position:absolute; top:0; left:0; bottom:0; right:var(--chron); background:var(--ocean); }
+  .leaflet-container { background:var(--ocean); font-family:inherit; }
+  b, strong { color:#fff; }
+
+  /* ---------- назви країн ---------- */
+  .clabel { pointer-events:none; white-space:nowrap; font-family:"PT Serif", Georgia, serif; font-weight:700;
+            color:#f3efe3; letter-spacing:.12em; text-transform:uppercase; opacity:.92;
+            text-shadow: 0 0 2px #000, 1px 1px 0 #2b2b2b, 2px 2px 3px rgba(0,0,0,.6); }
+  .clabel span { display:inline-block; transform-origin:center center; }
+
+  /* ---------- війська ---------- */
+  .troop { pointer-events:none; white-space:nowrap; }
+  .troop span { display:inline-block; transform:translate(-50%,-50%); background:rgba(14,20,27,.78); border:1px solid #0008;
+                border-radius:4px; padding:0 4px; font-size:11px; font-weight:700; color:#f0e6c8; line-height:15px; }
+  .troop span i { font-style:normal; color:#e5938a; font-weight:400; }
+
+  /* ---------- бої та загрози ---------- */
+  .battle span, .threat span { display:inline-block; transform:translate(-50%,-50%); white-space:nowrap; border-radius:6px; padding:2px 6px;
+               font-size:12px; font-weight:700; box-shadow:0 0 0 1px #0009, 0 2px 6px #0008; text-align:center; }
+  .battle.win span { background:#2f5f33; color:#e8ffe6; }
+  .battle.fail span { background:#6b2a26; color:#ffe9e6; }
+  .battle small { font-weight:400; opacity:.85; }
+  .threat span { background:#8a5a12; color:#fff3d6; animation:pulse 1.4s infinite; }
+  .threat.war span { background:#7d1f1a; }
+  @keyframes pulse { 0%,100% { box-shadow:0 0 0 1px #0009, 0 0 0 0 rgba(255,170,40,.7);} 50% { box-shadow:0 0 0 1px #0009, 0 0 0 9px rgba(255,170,40,0);} }
+
+  /* ---------- верхня панель ---------- */
+  #top { position:absolute; top:12px; left:12px; z-index:1000; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+         max-width:calc(100% - var(--chron) - 40px);
+         background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 10px; }
+  #top b.t { color:var(--gold); font-family:"PT Serif", serif; letter-spacing:.06em; }
+  #info { color:var(--ink); font-size:14px; }
+  #info span { color:var(--muted); }
+  .btn { background:#223142; color:var(--ink); border:1px solid #3a4b5e; border-radius:7px; padding:6px 10px; cursor:pointer; font:inherit; font-size:14px; }
+  .btn:hover { border-color:var(--gold); }
+  .btn.main { background:var(--gold); color:#1a1a1a; border-color:var(--gold); font-weight:700; }
+  .btn:disabled { opacity:.45; cursor:default; }
+  #conn { width:10px; height:10px; border-radius:50%; background:#a33; box-shadow:0 0 6px #a33; }
+  #conn.on { background:#4c4; box-shadow:0 0 6px #4c4; }
+  #busy { display:none; position:absolute; top:70px; left:calc((100% - var(--chron)) / 2); transform:translateX(-50%); z-index:1001;
+          background:var(--panel); border:1px solid var(--gold); border-radius:10px; padding:10px 18px; font-size:16px; }
+  #busy i { display:inline-block; animation:spin 1.2s linear infinite; font-style:normal; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #toast { display:none; position:absolute; bottom:20px; left:calc((100% - var(--chron)) / 2); transform:translateX(-50%); z-index:1001;
+           background:#5a2420; border:1px solid #a44; border-radius:8px; padding:8px 14px; }
+
+  /* ---------- панель регіону/країни ---------- */
+  #panel { position:absolute; top:70px; left:12px; bottom:12px; width:300px; z-index:1000; display:none;
+           background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; overflow:auto; }
+  #panel h2 { margin:0 0 2px; font-family:"PT Serif", serif; font-size:20px; letter-spacing:.04em; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:10px; }
+  .sw { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-1px; border:1px solid #0006; }
+  h3 { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--gold); margin:14px 0 6px; }
+  .row { display:flex; justify-content:space-between; gap:10px; font-size:14px; padding:3px 0; border-bottom:1px solid #222d39; }
+  .row span:last-child { text-align:right; }
+  .bar { height:6px; background:#26323f; border-radius:3px; margin:3px 0 8px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:linear-gradient(90deg,#8a6d2f,var(--gold)); }
+  .close { position:absolute; top:10px; right:12px; cursor:pointer; color:var(--muted); font-size:18px; }
+  .note { color:var(--muted); font-size:12px; margin-top:12px; line-height:1.4; }
+  .grey { background:repeating-linear-gradient(45deg,#6d6d6d 0 4px,#4f4f4f 4px 8px); }
+  .leaflet-tooltip.rt { background:var(--panel); color:var(--ink); border:1px solid #3a4b5e; box-shadow:none; font-size:13px; }
+  .leaflet-tooltip.rt:before { display:none; }
+
+  /* ---------- хроніка ---------- */
+  #chron { position:absolute; top:0; right:0; bottom:0; width:var(--chron); z-index:1000; background:#111821; border-left:1px solid var(--line);
+           display:flex; flex-direction:column; }
+  #chead { padding:14px 16px 10px; border-bottom:1px solid var(--line); }
+  #chead h1 { margin:0; font-family:"PT Serif", serif; font-size:22px; letter-spacing:.14em; color:var(--gold); }
+  #chead .meta { color:var(--muted); font-size:13px; margin-top:2px; }
+  #tension { margin-top:8px; font-size:12px; color:var(--muted); }
+  #tension .bar { height:7px; margin:4px 0 0; }
+  #tension .bar i { background:linear-gradient(90deg,#4f8f5a,#c9a75a,#c0503f); }
+  #ctrl { display:flex; gap:6px; margin-top:10px; align-items:center; }
+  #ctrl .btn { padding:4px 10px; }
+  #pstat { color:var(--muted); font-size:12px; margin-left:4px; }
+  #moves { border-bottom:1px solid var(--line); padding:8px 16px; font-size:13px; max-height:30%; overflow:auto; }
+  #moves summary { cursor:pointer; color:var(--gold); text-transform:uppercase; letter-spacing:.1em; font-size:12px; }
+  #moves .mv { padding:3px 0; border-bottom:1px solid #1c2631; }
+  #moves .mv.vet { text-decoration:line-through; opacity:.5; }
+  #moves .mv span { color:var(--muted); }
+  #clist { flex:1; overflow:auto; padding:6px 0 30px; scroll-behavior:smooth; }
+  .rhead { padding:10px 16px 4px; color:var(--gold); font-size:12px; letter-spacing:.14em; text-transform:uppercase; }
+  .art { padding:10px 16px; border-left:3px solid transparent; cursor:pointer; transition:background .3s; }
+  .art:hover { background:#18222d; }
+  .art .d { color:var(--muted); font-size:12px; }
+  .art .ti { font-family:"PT Serif", serif; font-size:15px; letter-spacing:.03em; margin:2px 0 4px; color:#f1e9d2; }
+  .art .tx { font-size:14px; line-height:1.45; color:#cfc8b6; display:none; }
+  .art.open .tx { display:block; }
+  .art.cur { background:#1d2733; border-left-color:var(--gold); }
+  .art.cur .ti { color:var(--gold); }
+  #moves .res { padding:3px 0; border-bottom:1px solid #1c2631; }
+  #moves .res b.ok { color:#7fd47a; } #moves .res b.half { color:#e0c060; } #moves .res b.bad { color:#e2766c; } #moves .res b.none { color:#9aa4ae; }
+  #moves .res i { color:var(--muted); font-style:normal; }
+  #nwfx { position:absolute; inset:0; pointer-events:none; z-index:450; opacity:0; transition:opacity 2s; background:radial-gradient(ellipse at center, rgba(160,180,210,.25), rgba(90,105,130,.85)); mix-blend-mode:multiply; }
+  .dials { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px 6px; margin:6px 0 4px; }
+  .dial { text-align:center; font-size:11px; color:var(--muted); }
+  .dial .ring { width:52px; height:52px; margin:0 auto 2px; border-radius:50%; display:grid; place-items:center; position:relative; }
+  .dial .ring::after { content:""; position:absolute; inset:6px; border-radius:50%; background:var(--panel); }
+  .dial .ring span { position:relative; z-index:1; font-size:18px; line-height:1; }
+  .dial b { display:block; color:var(--ink); font-size:13px; }
+  .dial i { display:block; font-style:normal; color:#ffcf6b; font-size:10px; }
+  #ticker { position:absolute; left:0; right:var(--chron); bottom:0; height:26px; background:rgba(10,14,20,.88); border-top:1px solid var(--line); overflow:hidden; z-index:900; font-size:13px; display:none; }
+  #tickin { position:absolute; white-space:nowrap; top:4px; left:100%; animation:tick 60s linear infinite; }
+  #tickin span { margin-right:34px; color:var(--ink); } #tickin b.up { color:#5fd06a; } #tickin b.dn { color:#e2554a; } #tickin i { color:var(--muted); font-style:normal; }
+  @keyframes tick { from { transform:translateX(0); } to { transform:translateX(calc(-100% - 100vw)); } }
+  .resi span { display:inline-block; transform:translate(-50%,-140%); font-size:13px; filter:drop-shadow(0 0 2px #000); }
+  #flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:2000; transition:opacity .9s ease-out; }
+  .warhead span { display:block; width:10px; height:10px; margin:-5px 0 0 -5px; border-radius:50%; background:#fff6c8; box-shadow:0 0 10px 4px #ffb347, 0 0 22px 8px rgba(255,90,40,.6); }
+  .nuke span { display:inline-block; transform:translate(-50%,-50%); background:#3d3a0e; color:#fff27a; border-radius:50%; width:30px; height:30px; line-height:30px;
+               text-align:center; font-size:20px; box-shadow:0 0 0 2px #000a, 0 0 18px 6px rgba(255,230,80,.55); }
+  .cap { pointer-events:auto; }
+  .cap span { display:inline-block; transform:translate(-50%,-110%); line-height:1; text-shadow:0 0 3px #000, 0 0 6px #000; }
+  .cap.pl span { transform:translate(-50%,-95%); }
+  .cap.pl span { font-size:24px; color:#f5c842; }
+  .cap.bot span { font-size:14px; color:#f2efe6; opacity:.9; }
+  .al { padding:6px 0; border-bottom:1px solid #222d39; cursor:pointer; font-size:14px; display:flex; justify-content:space-between; }
+  .al:hover { color:var(--gold); }
+  #srch { position:relative; }
+  #q { background:#16202b; color:var(--ink); border:1px solid #3a4b5e; border-radius:7px; padding:6px 26px 6px 10px; font:inherit; font-size:14px; width:230px; outline:none; }
+  #q:focus { border-color:var(--gold); }
+  #qx { position:absolute; right:8px; top:50%; transform:translateY(-50%); cursor:pointer; color:var(--muted); display:none; }
+  #sugg { position:absolute; top:calc(100% + 4px); left:0; width:320px; background:var(--panel); border:1px solid var(--line); border-radius:8px; display:none; z-index:1100; max-height:340px; overflow:auto; }
+  #sugg div { padding:6px 10px; cursor:pointer; font-size:14px; border-bottom:1px solid #222d39; display:flex; justify-content:space-between; gap:10px; }
+  #sugg div:hover, #sugg div.on { background:#1d2733; color:var(--gold); }
+  #sugg span { color:var(--muted); font-size:12px; white-space:nowrap; }
+  .al.on { color:var(--gold); }
+  #progress { height:3px; background:#26323f; }
+  #progress i { display:block; height:100%; width:0; background:var(--gold); }
+  /* ---------- сайт для гравців ---------- */
+  body.site #conn, body.site #bRound, body.site #bUndo, body.site #busy { display:none !important; }
+  body:not(.site) .siteonly { display:none !important; }
+  .legend { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); margin:4px 0 6px; }
+  .legend i { display:inline-block; width:22px; height:10px; border-radius:2px; }
+  #more { display:block; margin:10px auto 0; }
+  @media (max-width: 820px) {
+    :root { --chron:0px; }
+    #map { right:0; bottom:52px; }
+    #top { left:6px; right:6px; top:6px; max-width:none; flex-wrap:nowrap; overflow-x:auto; padding:6px 8px; gap:6px; scrollbar-width:none; }
+    #top::-webkit-scrollbar { display:none; }
+    #top b.t { display:none; }
+    #info { white-space:nowrap; font-size:13px; }
+    .btn { padding:6px 8px; font-size:13px; white-space:nowrap; }
+    #q { width:150px; }
+    #sugg { position:fixed; top:52px; left:6px; width:calc(100vw - 12px); }
+    #chron { top:auto; height:52px; width:100%; border-left:none; border-top:1px solid var(--gold); transition:height .25s; z-index:1050; }
+    #chron.open { height:62vh; }
+    #chead { padding:8px 14px 6px; cursor:pointer; }
+    #chead h1 { font-size:17px; display:flex; justify-content:space-between; align-items:center; }
+    #chead h1::after { content:"▲"; font-size:12px; color:var(--muted); }
+    #chron.open #chead h1::after { content:"▼"; }
+    #chron:not(.open) #tension, #chron:not(.open) #ctrl { display:none; }
+    #panel { left:0 !important; right:0; top:auto !important; bottom:52px; width:auto; max-height:58vh; border-radius:14px 14px 0 0; padding:14px; z-index:1060; }
+    #ticker { display:none !important; }
+    #busy, #toast { left:50%; }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="top">
+  <div id="conn" title="Зв'язок зі Streamer.bot"></div>
+  <b class="t">КАРТА СВІТУ</b>
+  <span id="info"></span>
+  <button class="btn main" id="bRound">▶ Симулювати</button>
+  <button class="btn" id="bUndo">↶ Відкотити</button>
+  <button class="btn" id="bReplay" title="Програти хроніку останнього раунду">⟲ Повтор</button>
+  <button class="btn" id="bAl" title="Союзи">🏛 Союзи</button>
+  <button class="btn" id="bRel" title="Релігії">⛪ Релігії</button>
+  <button class="btn" id="bTr" title="Двосторонні договори">📜 Договори</button>
+  <button class="btn" id="bRes" title="Ресурси регіонів">⛏ Ресурси</button>
+  <button class="btn" id="bMkt" title="Біржа">📈 Біржа</button>
+  <button class="btn" id="bPl" title="Гравці">👥 Гравці</button>
+  <button class="btn siteonly" id="bRelM" title="Відносини твоєї країни" style="display:none">🤝 Відносини</button>
+  <button class="btn siteonly" id="bMe" title="Моя країна">👤 Увійти</button>
+  <div id="srch"><input id="q" type="text" placeholder="🔍 Країна, гравець або регіон" autocomplete="off"><span id="qx" title="Скинути">✕</span><div id="sugg"></div></div>
+</div>
+<div id="busy"><i>⏳</i> ШІ рахує раунд…</div>
+<div id="toast"></div>
+<div id="flash"></div>
+<div id="ticker"><div id="tickin"></div></div>
+<div id="nwfx"></div>
+
+<div id="panel"><span class="close" onclick="closePanel()">✕</span><div id="pbody"></div></div>
+
+<div id="chron">
+  <div id="chead">
+    <h1>ХРОНІКА</h1>
+    <div class="meta" id="cmeta">завантаження…</div>
+    <div id="tension"></div>
+    <div id="ctrl">
+      <button class="btn" id="bPrev" title="Попередня">⏮</button>
+      <button class="btn" id="bPlay" title="Пауза / продовжити">▶</button>
+      <button class="btn" id="bNext" title="Наступна">⏭</button>
+      <span id="pstat"></span>
+    </div>
+  </div>
+  <div id="progress"><i></i></div>
+  <details id="moves" open><summary>Ходи раунду</summary><div id="mlist"></div><div id="rlist"></div></details>
+  <div id="clist"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>window.GEO_SITE = 1;</script>
+<script src="geo_game.js"></script>
+<script>
+// =====================================================================
+//  Налаштування. Адресу WebSocket можна змінити: geo_map.html?ws=ws://127.0.0.1:8081/
+// =====================================================================
+const Q = new URLSearchParams(location.search);
+const SITE = !!window.GEO_SITE || Q.has("site");
+if (SITE) document.body.classList.add("site");
+let ME = null;   // { id, login, name }
+try { ME = JSON.parse(localStorage.getItem("geoMe") || "null"); } catch (e) { ME = null; }
+let relMode = null;   // країна, з чиїх очей фарбуємо карту
+const NOCONN = SITE ? "Стан світу ще завантажується" : "Немає зв'язку зі Streamer.bot";
+const WS_URL = Q.get("ws") || "ws://127.0.0.1:8081/";
+const ACTION_ROUND = "GEO Раунд", ACTION_STATE = "GEO Стан";
+const ARTICLE_MIN_MS = 9000, ARTICLE_MAX_MS = 22000;
+
+const STAT_NAMES = { economy:"Економіка", stability:"Стабільність", education:"Освіта", medicine:"Медицина", innovation:"Інновації" };
+const PALETTE = ["#7d8f5a","#a5835a","#6f86a3","#9a6a6a","#8a7aa5","#6a9a8f","#b09a5c","#7f6a52","#5f7f6a","#a56f86",
+                 "#8c9a6a","#6a7f9a","#9a8a6a","#7a5f7f","#5f8a9a","#a08a7a","#6f9a6a","#9a7a5a","#7a8aa0","#8f6f5f",
+                 "#6a8f7f","#a59a7a","#7f7f9a","#9a6f8f"];
+const FIXED = { UKR:"#4f79a8", RUS:"#5d6b4a", POL:"#a0606a", HUN:"#7f9a6a", ROU:"#b59a52", MDA:"#a8845a", VACUUM:"#8d8d8d" };
+
+let S = null;                 // стан від Streamer.bot
+let owner = {};               // власник, що зараз НАМАЛЬОВАНИЙ (під час програвання відстає від S)
+const FEAT = {};              // id → { f, layer, p }
+const NAME2ID = {};
+
+// ---------- сусіди не одного кольору ----------
+let ADJ = {};   // країна → підправлений колір (лише на карті)
+function hex2hsl(hex){ const n=parseInt(hex.slice(1),16); let r=(n>>16)/255,g=((n>>8)&255)/255,b=(n&255)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), l=(mx+mn)/2; let h=0, s=0;
+  if (mx!==mn){ const d=mx-mn; s=l>.5?d/(2-mx-mn):d/(mx+mn); h = mx===r?(g-b)/d+(g<b?6:0) : mx===g?(b-r)/d+2 : (r-g)/d+4; h*=60; }
+  return [h,s,l]; }
+function hsl2hex(h,s,l){ h=((h%360)+360)%360; s=Math.max(0,Math.min(1,s)); l=Math.max(.12,Math.min(.85,l));
+  const k=n=>(n+h/30)%12, a=s*Math.min(l,1-l), f=n=>l-a*Math.max(-1,Math.min(k(n)-3,9-k(n),1));
+  return "#"+[f(0),f(8),f(4)].map(x=>Math.round(x*255).toString(16).padStart(2,"0")).join(""); }
+function cdist(a,b){ const x=parseInt(a.slice(1),16), y=parseInt(b.slice(1),16);
+  const dr=(x>>16)-(y>>16), dg=((x>>8)&255)-((y>>8)&255), db=(x&255)-(y&255), rm=((x>>16)+(y>>16))/2;
+  return Math.sqrt((2+rm/256)*dr*dr + 4*dg*dg + (2+(255-rm)/256)*db*db); }
+const CMIN = 65;   // мінімальна «відстань» між кольорами сусідів
+function recolor(){
+  const area = {}, nbs = {};
+  for (const id in FEAT) {
+    const o = owner[id]; if (!o || o === "VACUUM") continue;
+    area[o] = (area[o] || 0) + (FEAT[id].p.a || 0);
+    for (const n of FEAT[id].p.nb || []) { const q = owner[n]; if (q && q !== o && q !== "VACUUM") { (nbs[o] = nbs[o] || {})[q] = 1; } }
+  }
+  const order = Object.keys(area).sort((a, b) => area[b] - area[a]);   // великі країни зберігають свій колір
+  const fin = {}, adj = {};
+  for (const o of order) {
+    const base = baseColor(o), near = Object.keys(nbs[o] || {}).filter(q => fin[q]).map(q => fin[q]);
+    const ok = c => near.every(x => cdist(c, x) >= CMIN);
+    let c = base;
+    if (!ok(c)) {
+      const [h, sa, l] = hex2hsl(base); let best = null, bd = -1;
+      search: for (const dl of [0, -.14, .14, -.24, .2]) for (const dh of [0, 30, -30, 60, -60, 90, -90, 150, 180]) {
+        if (!dl && !dh) continue;
+        const cand = hsl2hex(h + dh, Math.max(sa, .25), l + dl);
+        const d = near.length ? Math.min(...near.map(x => cdist(cand, x))) : 999;
+        if (d >= CMIN) { best = cand; break search; }
+        if (d > bd) { bd = d; best = cand; }
+        }
+      c = best || base;
+    }
+    fin[o] = c; if (c !== base) adj[o] = c;
+  }
+  const changed = JSON.stringify(adj) !== JSON.stringify(ADJ); ADJ = adj; return changed;
+}
+function colorOf(o){ return ADJ[o] || baseColor(o); }
+function baseColor(o){
+  if (S && S.countries[o] && S.countries[o].color && /^#[0-9a-f]{6}$/i.test(S.countries[o].color)) return S.countries[o].color;
+  if (FIXED[o]) return FIXED[o];
+  let h = 0; for (const ch of o) h = (h*31 + ch.charCodeAt(0)) >>> 0; return PALETTE[h % PALETTE.length];
+}
+function lighten(hex,f){ const n=parseInt(hex.slice(1),16); let r=n>>16,g=(n>>8)&255,b=n&255; r=Math.round(r+(255-r)*f); g=Math.round(g+(255-g)*f); b=Math.round(b+(255-b)*f); return "#"+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1); }
+function cname(o){ if (o === "VACUUM") return "Сіра зона"; if (o === "RUS") return "404"; return (S && S.countries[o] && S.countries[o].n) || GEO.names[o] || o; }
+function fmt(n){ n = Math.round(+n || 0); if (n >= 1e6) return (n/1e6).toFixed(n >= 1e7 ? 0 : 1).replace(".0","") + "M"; if (n >= 1e4) return Math.round(n/1e3) + "k"; if (n >= 1e3) return (n/1e3).toFixed(1).replace(".0","") + "k"; return "" + n; }
+// населення (у млн) людською мовою: 73,6 млн · 40 тис. · 850 осіб
+function popTxt(mln){
+  mln = +mln || 0;
+  if (mln >= 10) return mln.toFixed(1).replace(".0", "").replace(".", ",") + " млн";
+  if (mln >= 1) return mln.toFixed(2).replace(/\.?0+$/, "").replace(".", ",") + " млн";
+  if (mln >= 0.001) return Math.round(mln * 1000).toLocaleString("uk-UA") + " тис.";
+  return Math.round(mln * 1e6).toLocaleString("uk-UA") + " осіб";
+}
+function full(n){ return Math.round(+n || 0).toLocaleString("uk-UA"); }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
+function md(s){ return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>"); }
+
+// =====================================================================
+//  КАРТА
+// =====================================================================
+const map = L.map("map", { zoomControl:false, minZoom:2, maxZoom:9, zoomSnap:0.25, zoomDelta:0.5,
+                          maxBounds:[[-85,-200],[85,200]], maxBoundsViscosity:0.8, preferCanvas:true });
+L.control.zoom({ position:"bottomleft" }).addTo(map);
+map.setView([48.5, 30], 5);
+const renderer = L.canvas({ padding:0.5, tolerance:2 });
+
+let alFilter = null;   // члени вибраного союзу: решта світу сірим
+let resFilter = null;   // регіони з вибраною групою ресурсів
+function styleFor(id, fillOverride){
+  const o = owner[id] || "VACUUM";
+  if (resFilter && !resFilter.has(id) && !fillOverride)
+    return { renderer, color:"#1d2530", weight:0.4, opacity:0.4, fillColor:"#4a5058", fillOpacity:0.85, dashArray:null };
+  if (relMode && !fillOverride)
+    return { renderer, color:"#1d2530", weight:0.4, opacity:0.55, fillColor: o === relMode ? "#c9a75a" : o === "VACUUM" ? "#3d4249" : relColor(relOf(relMode, o) * 1.4), fillOpacity:0.92, dashArray: o === "VACUUM" ? "3 3" : null };
+  if (alFilter && !alFilter.has(o) && !fillOverride)
+    return { renderer, color:"#1d2530", weight:0.4, opacity:0.4, fillColor:"#4a5058", fillOpacity:0.85, dashArray:null };
+  return { renderer, color:"#1d2530", weight:0.4, opacity:0.55, fillColor: fillOverride || colorOf(o), fillOpacity:0.92, dashArray: o === "VACUUM" ? "3 3" : null };
+}
+
+let selectedId = null;
+L.geoJSON(GEO.regions, {
+  style: f => { owner[f.properties.id] = f.properties.o; return styleFor(f.properties.id); },
+  onEachFeature: (f, layer) => {
+    const p = f.properties;
+    FEAT[p.id] = { f, layer, p };
+    NAME2ID[p.n.toLowerCase()] = p.id;
+    owner[p.id] = p.o;
+    layer.bindTooltip(() => tipText(p.id), { sticky:true, className:"rt", direction:"top", offset:[0,-6] });
+    layer.on("mouseover", () => { if (p.id !== selectedId) layer.setStyle({ fillColor: lighten(colorOf(owner[p.id]), .25) }); });
+    layer.on("mouseout",  () => { if (p.id !== selectedId) layer.setStyle(styleFor(p.id)); });
+    layer.on("click", () => selectRegion(p.id));
+  }
+}).addTo(map);
+const BASE_OWNER = Object.assign({}, owner);
+
+// назва регіону: перейменована (зі стану гри) або стандартна
+function rname(id){ const r = S && S.regions[id]; return (r && r[4]) || (FEAT[id] ? FEAT[id].p.n : id); }
+function tipText(id){
+  const p = FEAT[id].p, o = owner[id];
+  let h = "<b>" + esc(rname(id)) + "</b><br><span style='color:#9aa4ae'>" + esc(cname(o)) + "</span>";
+  const r = S && S.regions[id];
+  if (r && r[2] && r[2] !== o) h += "<br><span style='color:#e5938a'>окупований (рідний: " + esc(cname(r[2])) + ")</span>";
+  const mc = SITE ? myCountry() : null;
+  if (mc && o !== mc && S.countries[o]) h += "<br>Відносини: " + relTxt(relOf(mc, o));
+  return h;
+}
+
+// ---------- кордони країн: ребра між регіонами різних власників + узбережжя ----------
+const EDGES = [];
+(function buildEdges(){
+  const m = new Map();
+  for (const f of GEO.regions.features) {
+    if (!f.geometry) continue;
+    const id = f.properties.id;
+    const polys = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
+    for (const poly of polys) for (const ring of poly) for (let i = 0; i < ring.length - 1; i++) {
+      const a = ring[i], b = ring[i+1];
+      const k1 = a[0]+","+a[1]+"|"+b[0]+","+b[1], k2 = b[0]+","+b[1]+"|"+a[0]+","+a[1];
+      if (m.has(k2)) { const e = m.get(k2); if (e.r1 !== id) e.r2 = id; }
+      else if (!m.has(k1)) m.set(k1, { a:[a[1],a[0]], b:[b[1],b[0]], r1:id, r2:null });
+    }
+  }
+  for (const e of m.values()) EDGES.push(e);
+})();
+let borderLayer = null;
+function drawBorders(){
+  const lines = [];
+  for (const e of EDGES) if (!e.r2 || owner[e.r1] !== owner[e.r2]) lines.push([e.a, e.b]);
+  if (borderLayer) map.removeLayer(borderLayer);
+  borderLayer = L.polyline(lines, { renderer, color:"#0e141b", weight:1.3, opacity:0.85, interactive:false }).addTo(map);
+}
+
+function restyleAll(){ recolor(); for (const id in FEAT) FEAT[id].layer.setStyle(styleFor(id)); if (selectedId) highlightSel(); drawBorders(); updateTroops(); }
+
+// плавна зміна кольору регіону зі спалахом
+function flashRegion(id, newOwner){
+  const F = FEAT[id]; if (!F) return;
+  owner[id] = newOwner;
+  const target = colorOf(newOwner);
+  const steps = [ "#ffffff", lighten(target, .7), lighten(target, .45), lighten(target, .2), null ];
+  steps.forEach((c, i) => setTimeout(() => F.layer.setStyle(styleFor(id, c)), i * 160));
+}
+
+// ---------- назви країн ----------
+const labelLayer = L.layerGroup().addTo(map);
+const STATIC_LABELS = {};
+for (const l of GEO.labels) STATIC_LABELS[l.o] = l;
+let LABELS = [];
+
+function regionsByOwner(own){ const m = {}; for (const id in own) (m[own[id]] = m[own[id]] || []).push(id); return m; }
+
+// чи точка (lat, lng) всередині полігона регіону (GeoJSON Polygon / MultiPolygon)
+function inRing(ring, x, y){ let ins = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) ins = !ins; } return ins; }
+function inFeature(f, lat, lng){
+  const g = f && f.geometry; if (!g) return false;
+  const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+  for (const poly of polys) if (poly.length && inRing(poly[0], lng, lat) && !poly.slice(1).some(h => inRing(h, lng, lat))) return true;
+  return false;
+}
+function rebuildLabels(){
+  if (recolor()) { for (const id in FEAT) FEAT[id].layer.setStyle(styleFor(id)); if (selectedId) highlightSel(); }
+  const now = regionsByOwner(owner), base = regionsByOwner(BASE_OWNER);
+  LABELS = [];
+  for (const o in now) {
+    if (o === "VACUUM") continue;
+    const regs = now[o], b = base[o] || [];
+    const same = regs.length === b.length && regs.every(r => BASE_OWNER[r] === o);
+    const t = (o === "RUS" ? "404" : cname(o)).toUpperCase(), ab = abbr(t);
+    if (same && STATIC_LABELS[o]) { LABELS.push(Object.assign({}, STATIC_LABELS[o], { t, ab })); continue; }
+    // нова форма країни: назва — у найбільшому зв'язному шматку території (розкидані володіння не тягнуть її на чужу землю)
+    const inC = {}; for (const r of regs) inC[r] = 1;
+    const done = {}; let comp = null, compA = -1;
+    for (const r0 of regs) {
+      if (done[r0] || !FEAT[r0]) continue;
+      const cur = [r0]; done[r0] = 1; let ca = 0;
+      for (let i = 0; i < cur.length; i++) { const p = FEAT[cur[i]].p; ca += p.a; for (const n of p.nb || []) if (inC[n] && !done[n] && FEAT[n]) { done[n] = 1; cur.push(n); } }
+      if (ca > compA) { compA = ca; comp = cur; }
+    }
+    if (!comp) continue;
+    let best = null, bestId = null, area = 0, lat = 0, lng = 0, bb = null;
+    for (const r of comp) { const p = FEAT[r].p; area += p.a; lat += p.c[0] * p.a; lng += p.c[1] * p.a; if (!best || p.a > best.a) { best = p; bestId = r; } }
+    if (!best || area <= 0) continue;
+    lat /= area; lng /= area;
+    // центр ваги має лежати на території країни (не в сусіда між її шматками) — інакше центр найбільшого регіону
+    if (!comp.some(r => inFeature(FEAT[r].f, lat, lng))) { lat = best.c[0]; lng = best.c[1]; comp = [bestId]; area = best.a; }
+    const side = Math.sqrt(area) * 111000 * Math.cos(lat * Math.PI / 180);
+    // межі основної території навколо центру — щоб назва не вилазила за кордон видовжених/кривих країн
+    for (const r of comp) { const b2 = FEAT[r].layer.getBounds(); bb = bb ? bb.extend(b2) : L.latLngBounds(b2.getSouthWest(), b2.getNorthEast()); }
+    let Lm = side * 1.3, Wm = side * 0.55;
+    if (bb) {
+      const wM = (bb.getEast() - bb.getWest()) * 111000 * Math.cos(lat * Math.PI / 180), hM = (bb.getNorth() - bb.getSouth()) * 111000;
+      Lm = Math.min(Lm, wM * 0.75); Wm = Math.min(Wm, hM * 0.5);
+    }
+    LABELS.push({ o, t, ab, lat, lng, a:0, L: Lm, W: Wm });
+  }
+}
+
+// абревіатура: з дужок у кінці назви, інакше — перші літери слів (без службових); для однослівних назв — немає
+const SKIP = { "І":1, "Й":1, "ТА":1, "ДЕ":1, "ДА":1, "ДЕЛЬ":1, "ЛА":1, "ЛЕ":1, "ФОН":1, "ВАН":1, "OF":1, "THE":1, "AND":1, "В":1, "У":1, "НА":1, "З":1 };
+function abbr(t){
+  const m = t.match(/\(([^()]{2,8})\)\s*$/); if (m) return m[1].trim();
+  const w = t.replace(/\(.*?\)/g, " ").split(/[\s\-–—]+/).filter(x => x && !SKIP[x] && /^[\p{L}]/u.test(x));
+  return w.length >= 2 ? w.map(x => x[0]).join("") : null;
+}
+function labelFit(txt, lenPx, hPx){ return Math.min(lenPx * 0.86 / (txt.length * 0.9 + 0.4), hPx * 0.6, 52); }
+let labelBoxes = [];   // рамки назв країн на екрані — бейджі військ їх обходять
+function updateLabels(){
+  const z = map.getZoom();
+  const mpp = 40075016.686 / (256 * Math.pow(2, z));
+  labelLayer.clearLayers();
+  const cand = [];
+  for (const l of LABELS) {
+    const lenPx = l.L / mpp, hPx = l.W / mpp;
+    let txt = l.t, fs = labelFit(txt, lenPx, hPx);
+    if (fs < 9 && l.ab) { txt = l.ab; fs = labelFit(txt, lenPx, hPx); }   // не вміщається — абревіатура
+    if (fs < 9) continue;
+    const w = txt.length * fs * 0.9, h = fs * 1.15;
+    const rad = l.a * Math.PI / 180, c = Math.abs(Math.cos(rad)), s2 = Math.abs(Math.sin(rad));
+    const p = map.latLngToContainerPoint([l.lat, l.lng]);
+    const bw = w * c + h * s2, bh = w * s2 + h * c;
+    cand.push({ l, txt, fs, box:[p.x - bw/2, p.y - bh/2, p.x + bw/2, p.y + bh/2], ob:{ x:p.x, y:p.y, w, h, a:l.a } });
+  }
+  cand.sort((x, y) => y.fs - x.fs);
+  const placed = [];
+  labelBoxes = [];
+  for (const c of cand) {
+    const [x1,y1,x2,y2] = c.box;
+    if (placed.some(b => !(x2 + 2 < b[0] || x1 - 2 > b[2] || y2 + 2 < b[1] || y1 - 2 > b[3]))) continue;
+    placed.push(c.box); labelBoxes.push(c.ob);
+    const m = L.marker([c.l.lat, c.l.lng], { interactive:false, keyboard:false, icon: L.divIcon({ className:"clabel", html:"<span>" + esc(c.txt) + "</span>", iconSize:null }) });
+    labelLayer.addLayer(m);
+    const el = m.getElement();
+    if (el) { const sp = el.firstChild; sp.style.fontSize = c.fs.toFixed(1) + "px"; sp.style.transform = "translate(-50%,-50%) rotate(" + c.l.a + "deg)"; }
+    c.shown = true;
+  }
+  // назва країни поза екраном, а її регіони видно → додаткова назва в найбільшому видимому регіоні
+  const sz = map.getSize(), inView = (pt) => pt.x > 0 && pt.y > 0 && pt.x < sz.x && pt.y < sz.y;
+  const seen = {};
+  for (const c of cand) if (c.shown && inView(map.latLngToContainerPoint([c.l.lat, c.l.lng]))) seen[c.l.o] = 1;
+  const byO = {};
+  for (const l of LABELS) byO[l.o] = l;
+  const best = {};
+  for (const id in FEAT) {
+    const o = owner[id]; if (!o || o === "VACUUM" || seen[o] || !byO[o]) continue;
+    const P = FEAT[id].p, pt = map.latLngToContainerPoint(P.c);
+    if (!inView(pt)) continue;
+    if (!best[o] || P.a > FEAT[best[o]].p.a) best[o] = id;
+  }
+  const extra = [];
+  for (const o in best) {
+    const id = best[o], P = FEAT[id].p, b = FEAT[id].layer.getBounds();
+    const lenPx = (b.getEast() - b.getWest()) * 111000 * Math.cos(P.c[0] * Math.PI / 180) * 0.75 / mpp, hPx = (b.getNorth() - b.getSouth()) * 111000 * 0.5 / mpp;
+    let txt = byO[o].t, fs = Math.min(labelFit(txt, lenPx, hPx), 28);
+    if (fs < 9 && byO[o].ab) { txt = byO[o].ab; fs = Math.min(labelFit(txt, lenPx, hPx), 28); }
+    if (fs < 9) continue;
+    const pt = map.latLngToContainerPoint(P.c), w = txt.length * fs * 0.9, h = fs * 1.15;
+    extra.push({ ll:P.c, txt, fs, box:[pt.x - w/2, pt.y - h/2, pt.x + w/2, pt.y + h/2] });
+  }
+  extra.sort((x, y) => y.fs - x.fs);
+  for (const c of extra) {
+    const [x1,y1,x2,y2] = c.box;
+    if (x1 < 4 || y1 < 4 || x2 > sz.x - 4 || y2 > sz.y - 4) continue;   // не обрізаємо краєм екрана
+    if (placed.some(b => !(x2 + 2 < b[0] || x1 - 2 > b[2] || y2 + 2 < b[1] || y1 - 2 > b[3]))) continue;
+    placed.push(c.box); labelBoxes.push({ x:(x1 + x2) / 2, y:(y1 + y2) / 2, w:x2 - x1, h:y2 - y1, a:0 });
+    const m = L.marker(c.ll, { interactive:false, keyboard:false, icon: L.divIcon({ className:"clabel", html:"<span>" + esc(c.txt) + "</span>", iconSize:null }) });
+    labelLayer.addLayer(m);
+    const el = m.getElement();
+    if (el) { const sp = el.firstChild; sp.style.fontSize = c.fs.toFixed(1) + "px"; sp.style.transform = "translate(-50%,-50%)"; }
+  }
+}
+
+// ---------- війська на регіонах (при наближенні) ----------
+const troopLayer = L.layerGroup().addTo(map);
+function troopsOf(id){
+  if (!S) return {};
+  const r = S.regions[id]; if (!r) return {};
+  if (S.troops_initialized) return r[1] || {};
+  // до першого раунду армія рівномірно по регіонах країни (як у рушії)
+  const o = r[0], c = S.countries[o];
+  if (!c) return {};
+  if (!S._cnt) { S._cnt = {}; for (const k in S.regions) { const ow = S.regions[k][0]; S._cnt[ow] = (S._cnt[ow] || 0) + 1; } }
+  const t = {}; t[o] = Math.floor((c.army || 0) / S._cnt[o]); return t;
+}
+function updateTroops(){
+  troopLayer.clearLayers();
+  if (!S || map.getZoom() < 4.75) return;
+  const b = map.getBounds().pad(0.1);
+  for (const id in FEAT) {
+    const p = FEAT[id].p;
+    if (!b.contains(p.c)) continue;
+    const t = troopsOf(id), o = owner[id];
+    let mine = 0, other = 0;
+    for (const k in t) { if (k === o) mine += t[k]; else other += t[k]; }
+    if (mine + other < 1) continue;
+    const txt = (mine ? fmt(mine) : "") + (other ? (mine ? " " : "") + "+" + fmt(other) : "");
+    // бейдж налазить на назву країни → зсуваємо його під назву
+    const pt = map.latLngToContainerPoint(p.c), bw = txt.length * 7 + 10, bh = 16;
+    // перевірка в системі координат назви (вона може бути похилою): бейдж зсуваємо вздовж нормалі до назви
+    let ox = 0, oy = 0;
+    for (const B of labelBoxes) {
+      const ra = B.a * Math.PI / 180, cs = Math.cos(ra), sn = Math.sin(ra);
+      const rx = (pt.x - B.x) * cs + (pt.y - B.y) * sn, ry = -(pt.x - B.x) * sn + (pt.y - B.y) * cs;
+      if (Math.abs(rx) > B.w / 2 + bw / 2 || Math.abs(ry) > B.h / 2 + bh / 2) continue;
+      const ty = (ry >= 0 ? 1 : -1) * (B.h / 2 + bh / 2 + 3), d = ty - ry;
+      ox = -d * sn; oy = d * cs; break;
+    }
+    const html = "<span" + (ox || oy ? " style='transform:translate(calc(-50% + " + Math.round(ox) + "px),calc(-50% + " + Math.round(oy) + "px))'" : "") + ">" + (mine ? fmt(mine) : "") + (other ? (mine ? " " : "") + "<i>+" + fmt(other) + "</i>" : "") + "</span>";
+    troopLayer.addLayer(L.marker(p.c, { interactive:false, keyboard:false, icon: L.divIcon({ className:"troop", html, iconSize:null }) }));
+  }
+}
+map.on("zoomend moveend", () => { updateLabels(); updateTroops(); });
+map.on("zoomend", () => drawCapitals());
+
+// ---------- бої, загрози, підсвітка ----------
+const battleLayer = L.layerGroup().addTo(map);
+const threatLayer = L.layerGroup().addTo(map);
+const siegeLayer = L.layerGroup().addTo(map);
+const hlLayer = L.layerGroup().addTo(map);
+const nukeLayer = L.layerGroup().addTo(map);
+// ---------- столиці: ★ золота — країни гравців (завжди), біла — боти (при наближенні) ----------
+const capLayer = L.layerGroup().addTo(map);
+function drawCapitals(){
+  capLayer.clearLayers();
+  if (!S) return;
+  const z = map.getZoom();
+  for (const id in S.countries) {
+    const c = S.countries[id];
+    if (!c.cap || !FEAT[c.cap] || owner[c.cap] !== id) continue;
+    const pl = c.players && c.players.length > 0;
+    if (!pl && z < 4.5) continue;
+    const g = (troopsOf(c.cap)[id]) || 0;
+    const m = L.marker(FEAT[c.cap].p.c, { icon: L.divIcon({ className:"cap " + (pl ? "pl" : "bot"), html:"<span>★</span>", iconSize:null }), zIndexOffset: pl ? 800 : 600 });
+    m.bindTooltip("<b>Столиця: " + esc(cname(id)) + "</b><br>" + esc(rname(c.cap)) + " · гарнізон " + full(g), { className:"rt", direction:"top", offset:[0,-8] });
+    m.on("click", () => selectRegion(c.cap));
+    capLayer.addLayer(m);
+  }
+}
+function drawNukes(){
+  nukeLayer.clearLayers();
+  if (!S || !S.last_round || !S.last_round.nukes) return;
+  for (const n of S.last_round.nukes) {
+    const F = FEAT[n.region]; if (!F) continue;
+    const m = L.marker(F.p.c, { icon: L.divIcon({ className:"nuke", html:"<span>☢</span>", iconSize:null }), zIndexOffset:1200 });
+    m.bindTooltip("<b>Ядерний удар</b><br>" + esc(cname(n.attacker)) + " → " + esc(n.region_name || F.p.n) + (n.retaliation ? " (у відповідь)" : "") +
+                  "<br>Військових: −" + full(n.troops_killed) + "<br>Цивільних: ≈" + full(n.civilian_deaths), { className:"rt" });
+    nukeLayer.addLayer(m);
+  }
+}
+// ---------- анімація ядерного удару: ракета дугою зі столиці, сирена, спалах, ударні хвилі ----------
+const nukeFx = L.layerGroup().addTo(map);
+const playedNukes = new Set();
+let siren = null;
+function sirenStart(){ try { if (!siren) { siren = new Audio("siren.mp3"); siren.loop = true; } siren.volume = 0.8; siren.currentTime = 0; siren.play().catch(() => {}); } catch (e) {} }
+function sirenStop(){
+  if (!siren) return;
+  const a = siren; let v = a.volume;
+  const t = setInterval(() => { v -= 0.08; if (v <= 0) { clearInterval(t); a.pause(); a.volume = 0.8; } else a.volume = v; }, 80);
+}
+function nukeStart(n){
+  const c = S.countries[n.attacker];
+  if (c && c.cap && FEAT[c.cap]) return FEAT[c.cap].p.c;
+  const regs = Object.keys(owner).filter(r => owner[r] === n.attacker);
+  return regs.length ? FEAT[regs[0]].p.c : null;
+}
+// послідовно всі удари (удар у відповідь — після першого)
+function playNukes(list, done){
+  const n = list.shift(); if (!n) { if (done) done(); return; }
+  launchNuke(n, () => setTimeout(() => playNukes(list, done), 600));
+}
+function launchNuke(n, done){
+  const T = FEAT[n.region], from = nukeStart(n);
+  if (!T || !from) { if (done) done(); return; }
+  if (SITE) { flyTo([n.region]); if (done) setTimeout(done, 1500); return; }   // на сайті без сирени й анімації
+  const to = T.p.c;
+  map.flyToBounds(L.latLngBounds([from, to]).pad(0.35), { maxZoom:6, duration:1.2 });
+  setTimeout(() => {
+    sirenStart();
+    const k = Math.cos((from[0] + to[0]) / 2 * Math.PI / 180) || 1;
+    const a = [from[1] * k, from[0]], b = [to[1] * k, to[0]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    let nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len; if (ny < 0) { nx = -nx; ny = -ny; }   // дуга вигинається «вгору» (на північ)
+    const c = [(a[0] + b[0]) / 2 + nx * len * 0.35, (a[1] + b[1]) / 2 + ny * len * 0.35];
+    const at = (t) => { const u = 1 - t; const x = u*u*a[0] + 2*u*t*c[0] + t*t*b[0], y = u*u*a[1] + 2*u*t*c[1] + t*t*b[1]; return [y, x / k]; };
+    const trail = L.polyline([from], { renderer, color:"#d9d4c7", weight:3, opacity:0.75, dashArray:"2 6", interactive:false });
+    const glow = L.polyline([from], { renderer, color:"#ff9a3c", weight:6, opacity:0.25, interactive:false });
+    const head = L.marker(from, { icon: L.divIcon({ className:"warhead", html:"<span></span>", iconSize:null }), interactive:false, zIndexOffset:3000 });
+    nukeFx.addLayer(glow); nukeFx.addLayer(trail); nukeFx.addLayer(head);
+    const dur = 2600, t0 = performance.now(), pts = [from];
+    function step(now){
+      const t = Math.min(1, (now - t0) / dur), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;   // розгін і падіння
+      const p = at(e); pts.push(p); trail.setLatLngs(pts); glow.setLatLngs(pts); head.setLatLng(p);
+      if (t < 1) { requestAnimationFrame(step); return; }
+      nukeFx.removeLayer(head);
+      impact(to, T);
+      sirenStop();
+      // слід поволі тане
+      let o = 0.75; const fade = setInterval(() => { o -= 0.05; if (o <= 0) { clearInterval(fade); nukeFx.removeLayer(trail); nukeFx.removeLayer(glow); } else { trail.setStyle({ opacity:o }); glow.setStyle({ opacity:o / 3 }); } }, 120);
+      setTimeout(() => { if (done) done(); }, 2200);
+    }
+    requestAnimationFrame(step);
+  }, 1300);
+}
+function impact(to, T){
+  const fl = document.getElementById("flash");
+  fl.style.transition = "none"; fl.style.opacity = "0.92";
+  requestAnimationFrame(() => { fl.style.transition = "opacity .9s ease-out"; fl.style.opacity = "0"; });
+  const b = T.layer.getBounds(), R = Math.max(60000, Math.min(600000, b.getNorthEast().distanceTo(b.getSouthWest()) * 0.45));
+  [0, 350, 700].forEach((d, i) => setTimeout(() => {
+    const ring = L.circle(to, { renderer, radius:1, color:i ? "#ffd27a" : "#ffffff", weight:3, opacity:0.9, fill:i === 0, fillColor:"#ff7a2a", fillOpacity:0.35, interactive:false });
+    nukeFx.addLayer(ring);
+    const t0 = performance.now(), dur = 1600;
+    (function grow(now){ const t = Math.min(1, (now - t0) / dur); ring.setRadius(R * (0.15 + 0.85 * t)); ring.setStyle({ opacity:0.9 * (1 - t), fillOpacity:0.35 * (1 - t) });
+      if (t < 1) requestAnimationFrame(grow); else nukeFx.removeLayer(ring); })(t0);
+  }, d));
+}
+
+const drawnBattles = new Set();
+let battlePts = [];
+
+// ---------- стрілки наступу: дуга-«стрічка», що звужується до наконечника; роздвоєння з одного регіону й сходження в один ----------
+const arrowLayer = L.layerGroup().addTo(map);
+let arrowList = [];   // {src, dst, color, troops}
+function P(ll, k){ return [ll[1] * k, ll[0]]; }          // lat/lng → площина (x — довгота з поправкою на широту)
+function LL(p, k){ return [p[1], p[0] / k]; }
+function bez(a, c, b, t){ const u = 1 - t; return [u*u*a[0] + 2*u*t*c[0] + t*t*b[0], u*u*a[1] + 2*u*t*c[1] + t*t*b[1]]; }
+function ribbon(a, c, b, w0, w1, k){
+  const L1 = [], R1 = [], N = 18;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, p = bez(a, c, b, t), q = bez(a, c, b, Math.min(1, t + 0.01)), q0 = bez(a, c, b, Math.max(0, t - 0.01));
+    let dx = q[0] - q0[0], dy = q[1] - q0[1]; const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
+    const w = (w0 + (w1 - w0) * t) / 2;
+    L1.push(LL([p[0] - dy * w, p[1] + dx * w], k)); R1.push(LL([p[0] + dy * w, p[1] - dx * w], k));
+  }
+  return L1.concat(R1.reverse());
+}
+function headPoly(tip, dir, w, len, k){
+  const base = [tip[0] - dir[0] * len, tip[1] - dir[1] * len], nx = -dir[1], ny = dir[0];
+  return [LL(tip, k), LL([base[0] + nx * w, base[1] + ny * w], k), LL([base[0] - nx * w, base[1] - ny * w], k)];
+}
+function arrowWidth(len, troops){ return Math.min(1.4, len * Math.max(0.06, Math.min(0.16, 0.08 + 0.035 * Math.log10(Math.max(1, troops) / 5000)))); }   // далекі удари не роздуваються
+function drawArrows(){
+  arrowLayer.clearLayers();
+  if (!arrowList.length) return;
+  const st = (col) => ({ renderer, color:"#0b0f14", weight:1, opacity:0.9, fillColor:col, fillOpacity:0.85, interactive:false });
+  const k = Math.cos((arrowList[0].dst[0]) * Math.PI / 180) || 1;
+  // сходження: кілька стрілок в одну ціль → один наконечник
+  const byDst = {}; for (const a of arrowList) (byDst[a.dkey] = byDst[a.dkey] || []).push(a);
+  const heads = {};
+  for (const key in byDst) {
+    const g = byDst[key], tip = P(g[0].dst, k);
+    let dx = 0, dy = 0, tr = 0; for (const a of g) { const s0 = P(a.src, k); const d = Math.hypot(tip[0] - s0[0], tip[1] - s0[1]) || 1; dx += (tip[0] - s0[0]) / d; dy += (tip[1] - s0[1]) / d; tr += a.troops; }
+    const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+    const L0 = Math.min(...g.map(a => { const s0 = P(a.src, k); return Math.hypot(tip[0] - s0[0], tip[1] - s0[1]); }));
+    const hl = Math.min(L0 * 0.28, 2.6), w = arrowWidth(L0, tr) * 1.3;
+    heads[key] = { tip, dir:[dx, dy], base:[tip[0] - dx * hl, tip[1] - dy * hl], hl, w, color:g.some(a => a.color === "#5fd06a") ? "#5fd06a" : g[0].color };
+  }
+  // роздвоєння: кілька цілей з одного регіону → спільний «стовбур», далі гілки
+  const bySrc = {}; for (const a of arrowList) (bySrc[a.skey] = bySrc[a.skey] || []).push(a);
+  for (const key in bySrc) {
+    const g = bySrc[key], s0 = P(g[0].src, k);
+    const ends = g.map(a => heads[a.dkey].base);
+    if (g.length === 1) {
+      const a = g[0], e = ends[0], len = Math.hypot(e[0] - s0[0], e[1] - s0[1]) || 1e-6;
+      const mx = (s0[0] + e[0]) / 2, my = (s0[1] + e[1]) / 2, nx = -(e[1] - s0[1]) / len, ny = (e[0] - s0[0]) / len;
+      const c = [mx + nx * len * 0.18, my + ny * len * 0.18];
+      const w = arrowWidth(len, a.troops);
+      arrowLayer.addLayer(L.polygon(ribbon(s0, c, e, w * 0.45, w, k), st(a.color)));
+      continue;
+    }
+    let cx = 0, cy = 0; for (const e of ends) { cx += e[0]; cy += e[1]; } cx /= ends.length; cy /= ends.length;
+    const F = [s0[0] + (cx - s0[0]) * 0.45, s0[1] + (cy - s0[1]) * 0.45];
+    const tl = Math.hypot(F[0] - s0[0], F[1] - s0[1]) || 1e-6, tdir = [(F[0] - s0[0]) / tl, (F[1] - s0[1]) / tl];
+    const trT = g.reduce((x, a) => x + a.troops, 0), wT = arrowWidth(tl * 2.2, trT);
+    const win = g.filter(a => a.color === "#5fd06a").length * 2 >= g.length;
+    arrowLayer.addLayer(L.polygon(ribbon(s0, [(s0[0] + F[0]) / 2, (s0[1] + F[1]) / 2], F, wT * 0.6, wT, k), st(win ? "#5fd06a" : "#e2554a")));
+    g.forEach((a, i) => {
+      const e = ends[i], len = Math.hypot(e[0] - F[0], e[1] - F[1]) || 1e-6;
+      const c = [F[0] + tdir[0] * len * 0.45, F[1] + tdir[1] * len * 0.45];   // гілка плавно продовжує стовбур
+      const w = arrowWidth(len + tl, a.troops);
+      arrowLayer.addLayer(L.polygon(ribbon(F, c, e, Math.min(wT, w * 1.1), w, k), st(a.color)));
+    });
+  }
+  for (const key in heads) { const h = heads[key]; arrowLayer.addLayer(L.polygon(headPoly(h.tip, h.dir, h.w, h.hl, k), st(h.color))); }
+}
+
+function drawBattle(b, i){
+  const key = (S.last_round.round || 0) + ":" + i;
+  if (drawnBattles.has(key)) return;
+  const T = FEAT[b.region]; if (!T) return;
+  drawnBattles.add(key);
+  // звідки йшов удар: сусідній регіон нападника
+  let src = null;
+  for (const n of T.p.nb || []) if (FEAT[n] && (owner[n] === b.attacker || (S.regions[n] && S.regions[n][0] === b.attacker))) { src = FEAT[n].p.c; break; }
+  let srcId = null;
+  for (const n of T.p.nb || []) if (FEAT[n] && (owner[n] === b.attacker || (S.regions[n] && S.regions[n][0] === b.attacker))) { srcId = n; break; }
+  const win = b.result === "captured", strike = b.result === "strike";
+  const color = strike ? "#ff9a3c" : win ? "#5fd06a" : "#e2554a";
+  // удар ракетами / авіацією / флотом — з столиці нападника, дрони — з сусіднього регіону
+  if (strike && b.strike !== "drones") { const ac = S.countries[b.attacker]; if (ac && ac.cap && FEAT[ac.cap]) { src = FEAT[ac.cap].p.c; srcId = ac.cap; } }
+  if (strike && src) { arrowList.push({ src, dst:T.p.c, skey:srcId + "#s", dkey:b.region + "#s", color, troops:20000 }); drawArrows(); }
+  else if (src) { arrowList.push({ src, dst:T.p.c, skey:srcId, dkey:b.region, color, troops:+b.attackers || 0 }); drawArrows(); }
+  const WPN = { missiles:"ракети", air:"авіація", drones:"дрони", navy:"флот" };
+  const html = strike ? "<span>💥 удар · " + (WPN[b.strike] || "") + "<br><small>" + esc(cname(b.defender)) + " −" + fmt(b.defender_losses) + "</small></span>" : "<span>" + (win ? "⚔ захоплено" : "✖ відбито") + "<br><small>" + esc(cname(b.attacker)) + " −" + fmt(b.attacker_losses) + " · " + esc(cname(b.defender)) + " −" + fmt(b.defender_losses) + "</small></span>";
+  // якщо поруч уже є мітка бою — зсуваємо нову нижче, щоб не накладались
+  let near = 0;
+  for (const q of battlePts) if (Math.abs(q[0] - T.p.c[0]) < 1.2 && Math.abs(q[1] - T.p.c[1]) < 2) near++;
+  battlePts.push(T.p.c);
+  const icon = L.divIcon({ className:"battle " + (win ? "win" : "fail"), html, iconSize:null, iconAnchor:[0, -near * 40] });
+  const m = L.marker(T.p.c, { icon, zIndexOffset:1000 });
+  m.bindTooltip("<b>" + esc(b.region_name || T.p.n) + "</b><br>" + esc(cname(b.attacker)) + ": " + full(b.attackers) + " проти " + full(b.defenders) +
+                "<br>Втрати: " + full(b.attacker_losses) + " / " + full(b.defender_losses) +
+                (b.prisoners ? "<br>Полонені: " + full(b.prisoners) : "") + (b.civilian_deaths ? "<br>Цивільні: ≈" + full(b.civilian_deaths) : ""), { className:"rt" });
+  battleLayer.addLayer(m);
+}
+function battlesFor(regions){ if (!S || !S.last_round || !S.last_round.battles) return; S.last_round.battles.forEach((b, i) => { if (!regions || regions.includes(b.region)) drawBattle(b, i); }); }
+
+// котли (лише оголошені облоги): помаранчеве кільце навколо оточених регіонів
+function drawSieges(){
+  siegeLayer.clearLayers();
+  if (!S || !S.ops) return;
+  for (const op of S.ops) {
+    if (op.type === "strait_blockade" && op.at) {
+      const mode = op.mode === "only" ? "лише " + (op.targets || []).map(cname).join(", ") : op.mode === "except_allies" ? "крім союзників" : "для всіх";
+      const k = Math.max(1, (S.round || 0) - (op.started || 0));
+      const m = L.marker(op.at, { icon: L.divIcon({ className:"threat", html:"<span style='background:#0e4f7a'>⚓⛔ " + esc(op.name || "") + "</span>", iconSize:null }), zIndexOffset:960 });
+      m.bindTooltip("<b>Блокада: " + esc(op.name || "") + "</b><br>" + esc(cname(op.country)) + " · " + esc(mode) + " · " + k + "-й раунд" +
+        (op.hit && op.hit.length ? "<br>Відрізано: " + op.hit.map(esc).join(", ") : "<br>Символічна — нікого не зачепила"), { className:"rt" });
+      siegeLayer.addLayer(m);
+      continue;
+    }
+    if (op.type !== "siege") continue;
+    const regs = (op.regions || []).filter(r => FEAT[r] && owner[r] === op.owner);
+    if (!regs.length) continue;
+    siegeLayer.addLayer(L.geoJSON({ type:"FeatureCollection", features:regs.map(r => FEAT[r].f) }, { style:{ renderer, color:"#ff8a2a", weight:4, opacity:0.95, dashArray:"10 6", fill:false }, interactive:false }));
+    let la = 0, ln = 0, a = 0; for (const r of regs) { const p = FEAT[r].p; la += p.c[0] * p.a; ln += p.c[1] * p.a; a += p.a; }
+    const k = (S.round || 0) - (op.started || 0);
+    const m = L.marker([la / a, ln / a], { icon: L.divIcon({ className:"threat", html:"<span style='background:#9a4a10'>⭕ котел " + Math.max(1, k) + "/5</span>", iconSize:null }), zIndexOffset:950 });
+    m.bindTooltip("<b>Облога: " + esc(cname(op.country)) + " → " + esc(cname(op.owner)) + "</b><br>" + regs.map(r => esc(rname(r))).join(", "), { className:"rt" });
+    siegeLayer.addLayer(m);
+  }
+}
+function drawThreats(){
+  threatLayer.clearLayers();
+  drawSieges();
+  if (!S || !S.threats) return;
+  for (const t of S.threats) {
+    let rid = t.region && FEAT[t.region] ? t.region : null;
+    if (!rid) { const c = S.countries[t.victim]; if (c && c.cap && FEAT[c.cap]) rid = c.cap; }
+    if (!rid) continue;
+    const war = t.stage >= 3;
+    const label = war ? "⚔ війна" : "⚠ загроза " + t.stage + "/3";
+    const m = L.marker(FEAT[rid].p.c, { icon: L.divIcon({ className:"threat" + (war ? " war" : ""), html:"<span>" + label + "</span>", iconSize:null }), zIndexOffset:900 });
+    const st = { 1:"гібридна фаза: ДРГ і підтримка опозиції", 2:"війська стягуються до кордону — напад можливий наступного раунду", 3:"вторгнення", 4:"війна триває" }[t.stage] || "";
+    m.bindTooltip("<b>" + esc(cname(t.aggressor)) + " → " + esc(cname(t.victim)) + "</b><br>" + st, { className:"rt" });
+    threatLayer.addLayer(m);
+  }
+}
+
+function highlight(ids){
+  hlLayer.clearLayers();
+  const feats = ids.map(id => FEAT[id] && FEAT[id].f).filter(Boolean);
+  if (!feats.length) return;
+  hlLayer.addLayer(L.geoJSON({ type:"FeatureCollection", features:feats }, { style:{ renderer, color:"#f3d27a", weight:2.6, opacity:1, fill:false }, interactive:false }));
+}
+
+function flyTo(ids){
+  let b = null;
+  for (const id of ids) { const F = FEAT[id]; if (!F) continue; const bb = F.layer.getBounds(); b = b ? b.extend(bb) : L.latLngBounds(bb.getSouthWest(), bb.getNorthEast()); }
+  if (!b) return;
+  map.flyToBounds(b, { paddingTopLeft:[60, 90], paddingBottomRight:[60, 60], maxZoom:6.25, duration:1.8 });
+}
+
+// регіони статті: id або назви. Якщо їх немає — підсвічуємо згадані країни, а камера летить до їхніх столиць
+// (інакше одна Росія у статті відкидала б камеру на весь світ)
+function articleRegions(a){
+  const res = [];
+  for (const r of a.regions || []) {
+    if (FEAT[r]) res.push(r);
+    else if (typeof r === "string" && NAME2ID[r.toLowerCase()]) res.push(NAME2ID[r.toLowerCase()]);
+  }
+  if (res.length || !S) return { hl:res, fly:res };
+  const cs = a.countries || [], hl = [], fly = [];
+  for (const id in S.regions) if (FEAT[id] && (cs.includes(S.regions[id][0]) || cs.includes(owner[id]))) hl.push(id);
+  for (const c of cs) {
+    const k = S.countries[c];
+    if (k && k.cap && FEAT[k.cap]) fly.push(k.cap);
+    else { const r = hl.find(id => owner[id] === c); if (r) fly.push(r); }
+  }
+  return { hl, fly: fly.length ? fly : hl };
+}
+
+// =====================================================================
+//  ПАНЕЛЬ РЕГІОНУ / КРАЇНИ
+// =====================================================================
+function highlightSel(){ const F = FEAT[selectedId]; if (F) { F.layer.setStyle({ weight:2.2, color:"#f3d27a", opacity:1 }); F.layer.bringToFront(); } }
+function selectRegion(id){
+  if (alOpen != null || alFilter || resFilter) { alOpen = null; alFilter = null; resFilter = null; restyleAll(); }
+  else if (relMode) restyleAll();
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = id; highlightSel(); renderPanel();
+  document.getElementById("panel").style.display = "block";
+}
+let alOpen = null;
+function showAlliances(sel){
+  if (!S) return toast(NOCONN);
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null;
+  alOpen = sel == null ? null : sel;
+  const als = (S.alliances || []).filter(a => (a.members || []).length && a.name !== "ООН");
+  let h = "<h2>Союзи</h2><div class='sub'>Клік — показати членів союзу, решта світу стає сірою</div>";
+  als.forEach((a, i) => {
+    h += "<div class='al" + (i === alOpen ? " on" : "") + "' onclick='showAlliances(" + i + ")'><span>" + esc(a.name) + "</span><span>" + a.members.length + "</span></div>";
+    if (i === alOpen) h += "<div class='note' style='margin:4px 0 8px'>" + (a.type ? esc(a.type) + " · " : "") + a.members.map(m => esc(cname(m))).join(", ") + "</div>";
+  });
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+  alFilter = alOpen != null ? new Set(als[alOpen].members) : null;
+  hlLayer.clearLayers();
+  restyleAll();
+}
+document.getElementById("bAl").onclick = () => showAlliances(null);
+// ---------- релігії: як союзи — вибрана віра, решта світу сіра ----------
+function showReligions(sel){
+  if (!S) return toast(NOCONN);
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null; alOpen = null;
+  const cnt = {};
+  for (const id in S.countries) { const r = S.countries[id].rel; if (r) (cnt[r] = cnt[r] || []).push(id); }
+  const rels = (S.religions || []).filter(r => cnt[r.name]).sort((a, b) => cnt[b.name].length - cnt[a.name].length);
+  let h = "<h2>Релігії</h2><div class='sub'>Клік — показати держави цієї віри, решта світу стає сірою</div>";
+  rels.forEach((r, i) => {
+    h += "<div class='al" + (i === sel ? " on" : "") + "' onclick='showReligions(" + i + ")'><span><span class='sw' style='background:" + esc(r.color || "#888") + "'></span>" + esc(r.name) + (r.founder ? " ✨" : "") + "</span><span>" + cnt[r.name].length + "</span></div>";
+    if (i === sel) h += "<div class='note' style='margin:4px 0 8px'>" + (r.bonus && STAT_NAMES[r.bonus] ? "бонус: +0,5 " + STAT_NAMES[r.bonus].toLowerCase() + " за раунд (до 70) · " : "") + (r.family && r.family !== r.name ? esc(r.family) + " · " : "") + (r.founder ? "заснувала " + esc(cname(r.founder)) + " · " : "") + cnt[r.name].map(m => esc(cname(m))).join(", ") + "</div>";
+  });
+  h += "<div class='note'>Змінити віру: <b>!хід прийняти X</b> · заснувати свою: <b>!хід заснувати нову релігію «Назва»</b> (лідер або внутрішня політика, −10 стабільності). Одновірці зближуються, кожна віра щораунду дає +0,5 до свого показника (до 70).</div>";
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+  alFilter = sel != null && rels[sel] ? new Set(cnt[rels[sel].name]) : null;
+  hlLayer.clearLayers();
+  restyleAll();
+}
+document.getElementById("bRel").onclick = () => showReligions(null);
+// ---------- двосторонні договори ----------
+const TR_UA = { defense:"⚔ оборонний", nonaggression:"🤝 ненапад", economic:"📈 економічна", comprehensive:"🔗 всебічний", ceasefire:"☮ перемир'я", peace:"🕊 мир", transit:"🚚 транзит" };
+function trLine(t){
+  if (t.t === "transit") return esc(cname(t.guest)) + " через " + esc(cname(t.host));
+  return esc(cname(t.a)) + " — " + esc(cname(t.b)) + (t.rep ? " · репарації " + esc(cname(t.rep.payer)) + " −" + t.rep.amount + "/раунд" : "") + (t.until ? " · до раунду " + t.until : "");
+}
+function showTreaties(sel){
+  if (!S) return toast(NOCONN);
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null; alOpen = null;
+  const ts = (S.treaties || []);
+  let h = "<h2>Договори</h2><div class='sub'>Двосторонні угоди між країнами. Клік — підсвітити обидві</div>";
+  if (!ts.length) h += "<div class='note'>Поки жодного договору</div>";
+  ts.forEach((t, i) => { h += "<div class='al" + (i === sel ? " on" : "") + "' onclick='showTreaties(" + i + ")'><span>" + (TR_UA[t.t] || t.t) + "</span><span style='text-align:right'>" + trLine(t) + "</span></div>"; });
+  h += "<div class='note'>Запропонувати: <b>!хід запропонувати мир / пакт про ненапад / оборонний договір / економічну угоду X</b> · відповісти: <b>!пропозиція так N</b> · список: <b>!договори</b>. Оборона + ненапад + економіка = всебічний договір. Атака під договором — віроломство.</div>";
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+  const t = ts[sel]; alFilter = t ? new Set([t.a, t.b, t.host, t.guest].filter(Boolean)) : null;
+  hlLayer.clearLayers(); restyleAll();
+}
+document.getElementById("bTr").onclick = () => showTreaties(null);
+// ---------- ресурси й біржа ----------
+const RG = { energy:["⚡","Енергоносії","економіка"], food:["🌾","Продовольство","стабільність"], metals:["⛏","Метали","мобілізація й утримання армії"], strategic:["☢","Стратегічні","інновації (уран — ядерна програма з 60)"],
+             raw:["🌲","Сировина","економіка ×0,5"], hub:["⚓","Торгові хаби","економіка"], industry:["🏭","Промисловість","інновації"] };
+const resLayer = L.layerGroup().addTo(map);
+function drawRes(){
+  resLayer.clearLayers();
+  if (!S || !S.res || map.getZoom() < 4.6) return;
+  const b = map.getBounds().pad(0.1);
+  for (const id in S.res) { const F = FEAT[id]; if (!F || !b.contains(F.p.c)) continue;
+    resLayer.addLayer(L.marker(F.p.c, { icon:L.divIcon({ className:"resi", html:"<span title='" + esc(S.res[id][1]) + "'>" + (RG[S.res[id][0]] || ["•"])[0] + "</span>", iconSize:null }), interactive:false, zIndexOffset:500 })); }
+}
+map.on("zoomend moveend", drawRes);
+function priceChg(it){ const h = S.phist && S.phist[it]; if (!h || h.length < 2) return 0; return (h[h.length - 1] - h[h.length - 2]) / Math.max(1, h[h.length - 2]) * 100; }
+function spark(h){
+  if (!h || h.length < 2) return "";
+  const mn = Math.min(...h), mx = Math.max(...h), r = mx - mn || 1;
+  const pts = h.map((v, i) => (i * 60 / (h.length - 1)).toFixed(1) + "," + (16 - (v - mn) / r * 14).toFixed(1)).join(" ");
+  return "<svg width='60' height='18'><polyline points='" + pts + "' fill='none' stroke='" + (h[h.length - 1] >= h[0] ? "#5fd06a" : "#e2554a") + "' stroke-width='1.5'/></svg>";
+}
+function showRes(sel){
+  if (!S || !S.res) return toast("Ресурси з'являться після раунду");
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null; alOpen = null; alFilter = null;
+  const cnt = {}; for (const id in S.res) cnt[S.res[id][0]] = (cnt[S.res[id][0]] || 0) + 1;
+  let h = "<h2>Ресурси</h2><div class='sub'>Кожен регіон групи: +0,3 щораунду (окупований — 50%), максимум +1,5 з групи; ціна на біржі множить бонус</div>";
+  Object.keys(RG).forEach(g => { h += "<div class='al" + (g === sel ? " on" : "") + "' onclick='showRes(\"" + g + "\")'><span>" + RG[g][0] + " " + RG[g][1] + "</span><span>" + (cnt[g] || 0) + "</span></div>" +
+    (g === sel ? "<div class='note' style='margin:2px 0 8px'>Бонус: " + RG[g][2] + "</div>" : ""); });
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+  resFilter = sel ? new Set(Object.keys(S.res).filter(id => S.res[id][0] === sel)) : null;
+  hlLayer.clearLayers(); restyleAll();
+}
+function showMarket(){
+  if (!S || !S.prices) return toast("Біржа відкриється після раунду");
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null; alFilter = null; resFilter = null; restyleAll();
+  const items = Object.keys(S.prices).sort((a, b) => Math.abs(priceChg(b)) - Math.abs(priceChg(a)));
+  let h = "<h2>Біржа</h2><div class='sub'>База 100. Ціна множить бонус регіонів з цим товаром</div>";
+  for (const it of items) { const c = priceChg(it), w = S.pwhy && S.pwhy[it];
+    h += "<div class='row'><span>" + esc(it) + "<br><small style='color:var(--muted)'>" + (w ? esc(w) : "") + "</small></span><span style='text-align:right'>" + spark(S.phist && S.phist[it]) +
+         "<br><b>" + Math.round(S.prices[it]) + "</b> <b style='color:" + (c >= 0 ? "#5fd06a" : "#e2554a") + "'>" + (c >= 0 ? "▲" : "▼") + Math.abs(c).toFixed(1).replace(".", ",") + "%</b></span></div>"; }
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+}
+function renderTicker(){
+  const t = document.getElementById("ticker");
+  if (!S || !S.prices) { t.style.display = "none"; return; }
+  const items = Object.keys(S.prices).sort((a, b) => Math.abs(priceChg(b)) - Math.abs(priceChg(a))).slice(0, 14);
+  document.getElementById("tickin").innerHTML = items.map(it => { const c = priceChg(it), w = S.pwhy && S.pwhy[it];
+    return "<span>" + esc(it) + " <b>" + Math.round(S.prices[it]) + "</b> <b class='" + (c >= 0 ? "up" : "dn") + "'>" + (c >= 0 ? "▲" : "▼") + Math.abs(c).toFixed(1).replace(".", ",") + "%</b>" + (w ? " <i>· " + esc(w) + "</i>" : "") + "</span>"; }).join("");
+  t.style.display = "block";
+}
+document.getElementById("bRes").onclick = () => showRes(null);
+document.getElementById("bMkt").onclick = () => showMarket();
+
+// ---------- пошук країни, гравця або регіону ----------
+const qEl = document.getElementById("q"), suggEl = document.getElementById("sugg"), qxEl = document.getElementById("qx");
+let suggList = [], suggOn = -1;
+L.DomEvent.disableClickPropagation(document.getElementById("srch"));
+L.DomEvent.disableScrollPropagation(document.getElementById("srch"));
+function searchItems(q){
+  q = q.trim().toLowerCase(); if (!q || !S) return [];
+  const res = [], seen = {};
+  const add = (key, item) => { if (!seen[key] && res.length < 8) { seen[key] = 1; res.push(item); } };
+  const score = (t) => { t = String(t || "").toLowerCase(); return t === q ? 0 : t.startsWith(q) ? 1 : t.includes(q) ? 2 : 9; };
+  const cands = [];
+  for (const id in S.countries) {
+    const c = S.countries[id], n = cname(id), ab = abbr(n.toUpperCase());
+    const sc = Math.min(score(n), ab ? score(ab) : 9);
+    if (sc < 9) cands.push({ sc, pop:+c.pop || 0, key:"c" + id, item:{ kind:"c", id, label:n, sub:(c.lt || "") + (c.players && c.players.length ? " · " + c.players.length + " грав." : "") } });
+    for (const pl of c.players || []) { const ps = score(pl.name); if (ps < 9) cands.push({ sc:ps, pop:1e9, key:"p" + pl.name, item:{ kind:"c", id, label:pl.name, sub:n + " — " + (pl.role_name || "") } }); }
+  }
+  for (const rid in FEAT) { const rs = score(rname(rid)); if (rs < 2) cands.push({ sc:rs + 3, pop:0, key:"r" + rid, item:{ kind:"r", id:rid, label:rname(rid), sub:"регіон · " + cname(owner[rid]) } }); }
+  cands.sort((a, b) => a.sc - b.sc || b.pop - a.pop);   // рівні збіги — спершу більші країни
+  const cn = {}; for (const x of cands) if (x.item.kind === "c") cn[x.item.label.toLowerCase()] = 1;
+  for (const x of cands) if (x.item.kind === "c" || !cn[x.item.label.toLowerCase()]) add(x.key, x.item);   // регіон з назвою країни не дублюємо
+  return res;
+}
+function renderSugg(){
+  suggEl.innerHTML = suggList.map((x, i) => "<div class='" + (i === suggOn ? "on" : "") + "' data-i='" + i + "'>" + esc(x.label) + "<span>" + esc(x.sub) + "</span></div>").join("");
+  suggEl.style.display = suggList.length ? "block" : "none";
+  for (const el of suggEl.children) el.onclick = () => pickSugg(+el.dataset.i);
+}
+function pickSugg(i){
+  const x = suggList[i]; if (!x) return;
+  qEl.value = x.label; suggList = []; renderSugg(); qEl.blur();
+  if (x.kind === "r") { selectRegion(x.id); flyTo([x.id]); return; }
+  showCountry(x.id);
+}
+// панель завжди під верхньою смугою (вона може переноситись у два рядки)
+function placePanel(){ const t = document.getElementById("top"); document.getElementById("panel").style.top = (t.offsetTop + t.offsetHeight + 8) + "px"; }
+window.addEventListener("resize", placePanel); setTimeout(placePanel, 300);
+function showCountry(cid){
+  const c = S.countries[cid]; if (!c) return;
+  const regs = Object.keys(owner).filter(r => owner[r] === cid);
+  if (!regs.length) return toast("У цієї країни немає регіонів");
+  const cap = c.cap && owner[c.cap] === cid ? c.cap : regs[0];
+  selectRegion(cap);
+  alFilter = new Set([cid]); restyleAll();
+  // камера — на основну територію навколо столиці; далекі володіння (заморські острови) не розтягують її на весь світ
+  const cc = FEAT[cap].p.c;
+  let b = null;
+  for (const r of regs) {
+    const rc = FEAT[r].p.c; if (Math.abs(rc[0] - cc[0]) > 25 || Math.abs(rc[1] - cc[1]) > 40) continue;
+    const bb = FEAT[r].layer.getBounds(); b = b ? b.extend(bb) : L.latLngBounds(bb.getSouthWest(), bb.getNorthEast());
+  }
+  if (b) map.flyToBounds(b, innerWidth <= 820 ? { paddingTopLeft:[20, 60], paddingBottomRight:[20, innerHeight * 0.55], maxZoom:6.25, duration:1.5 } : { paddingTopLeft:[380, 110], paddingBottomRight:[60, 60], maxZoom:6.25, duration:1.5 });
+}
+qEl.addEventListener("input", () => { qxEl.style.display = qEl.value ? "block" : "none"; suggList = searchItems(qEl.value); suggOn = suggList.length ? 0 : -1; renderSugg(); });
+qEl.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") { suggOn = Math.min(suggList.length - 1, suggOn + 1); renderSugg(); e.preventDefault(); }
+  else if (e.key === "ArrowUp") { suggOn = Math.max(0, suggOn - 1); renderSugg(); e.preventDefault(); }
+  else if (e.key === "Enter") { pickSugg(suggOn >= 0 ? suggOn : 0); }
+  else if (e.key === "Escape") { clearSearch(); }
+});
+qEl.addEventListener("blur", () => setTimeout(() => { suggEl.style.display = "none"; }, 200));
+qEl.addEventListener("focus", () => { if (suggList.length) renderSugg(); });
+function clearSearch(){ qEl.value = ""; qxEl.style.display = "none"; suggList = []; renderSugg(); closePanel(); }
+qxEl.onclick = clearSearch;
+function closePanel(){
+  if (alOpen != null || alFilter || resFilter || relMode) { alOpen = null; alFilter = null; resFilter = null; relMode = null; restyleAll(); } document.getElementById("panel").style.display = "none"; if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId)); selectedId = null; }
+
+function renderPanel(){
+  if (!selectedId) return;
+  const p = FEAT[selectedId].p, o = owner[selectedId];
+  const r = S && S.regions[selectedId];
+  let h = "<h2>" + esc(rname(selectedId)) + "</h2>";
+  h += "<div class='sub'><span class='sw " + (o === "VACUUM" ? "grey" : "") + "' style='background:" + (o === "VACUUM" ? "" : colorOf(o)) + "'></span>" +
+       (o === "VACUUM" ? "Сіра зона — влади немає" : esc(cname(o))) + "</div>";
+  if (r && r[2] && r[2] !== o) h += "<div class='row'><span>Окупований</span><span>рідний: " + esc(cname(r[2])) + "</span></div>";
+  if (r) h += "<div class='row'><span>Населення</span><span>" + popTxt(r[3]) + "</span></div>";
+  const t = troopsOf(selectedId);
+  const tk = Object.keys(t);
+  h += "<h3>Війська в регіоні</h3>" + (tk.length ? tk.map(k => "<div class='row'><span>" + esc(cname(k)) + "</span><span>" + full(t[k]) + "</span></div>").join("") : "<div class='note' style='margin-top:0'>немає</div>");
+  if (o === "VACUUM") h += "<div class='note'>Регіон без влади. Сусіди можуть зайти сюди, а гравець — заснувати державу командою <b>!роль</b>.</div>";
+  const c = S && S.countries[o];
+  if (c) {
+    const regs = Object.values(owner).filter(x => x === o).length;
+    h += "<h3>" + esc(cname(o)) + "</h3>";
+    const mc = SITE ? myCountry() : null;
+    if (mc && mc !== o) h += "<div class='row'><span>Відносини з нами</span><span>" + relTxt(relOf(mc, o)) + "</span></div>";
+    if (c.gov) h += "<div class='row'><span>Влада</span><span>" + esc(c.gov) + "</span></div>";
+    if (c.cap && FEAT[c.cap]) h += "<div class='row'><span>Столиця</span><span>★ " + esc(rname(c.cap)) + "</span></div>";
+    if (c.lt || c.leader) h += "<div class='row'><span>Глава</span><span>" + esc(c.lt || "") + (c.leader ? " " + esc(c.leader) : "") + "</span></div>";
+    if (c.rel) h += "<div class='row'><span>Релігія</span><span>⛪ " + esc(c.rel) + "</span></div>";
+    h += "<div class='row'><span>Населення</span><span>" + popTxt(c.pop) + "</span></div>";
+    h += "<div class='row'><span>Армія</span><span>" + full(c.army) + "</span></div>";
+    if (c.nuke) h += "<div class='row'><span>Ядерна зброя</span><span>☢ є</span></div>";
+    // арсенал: кругові шкали з іконкою, військова міць і програми
+    if (c.ars) {
+      const A = [["air","✈","авіація"],["navy","⚓","флот"],["missiles","🚀","ракети"],["drones","🛸","дрони"],["ad","🛡","ППО"],["mod","🔧","модернізація"]];
+      const army = c.army || 0, sum = A.slice(0, 5).reduce((x, k) => x + (+c.ars[k[0]] || 0), 0);
+      const mp = Math.round(Math.sqrt(army) / 10 * (0.5 + (+c.ars.mod || 0) / 100) + sum / 5);
+      h += "<h3>Військо · міць " + mp + "</h3><div class='dials'>" + A.map(k => {
+        const v = Math.round(+c.ars[k[0]] || 0), pr = c.mprog && c.mprog[k[0]];
+        return "<div class='dial'><div class='ring' style='background:conic-gradient(var(--gold) " + v * 3.6 + "deg, #2a3646 0)'><span>" + k[1] + "</span></div><b>" + v + "</b>" + k[2] +
+               (pr ? "<i>🏭 " + (pr.total - pr.left) + "/" + pr.total + "</i>" : "") + "</div>";
+      }).join("") + "</div>";
+    }
+    if (S.res) {
+      const mine = {}; for (const id in S.res) if (owner[id] === o) { const g = S.res[id][0]; (mine[g] = mine[g] || []).push(S.res[id][1] + (S.regions[id] && S.regions[id][2] && S.regions[id][2] !== o ? "*" : "")); }
+      const gs = Object.keys(mine);
+      if (gs.length) h += "<div class='row'><span>Ресурси</span><span style='text-align:right'>" + gs.map(g => RG[g][0] + " " + mine[g].map(esc).join(", ")).join("<br>") + "</span></div>";
+    }
+    const myTr = (S.treaties || []).filter(t => t.a === o || t.b === o);
+    if (myTr.length) h += "<div class='row'><span>Договори</span><span style='text-align:right'>" + myTr.map(t => (TR_UA[t.t] || t.t) + " " + esc(cname(t.a === o ? t.b : t.a))).join("<br>") + "</span></div>";
+    h += "<div class='row'><span>Біженці</span><span>" + (c.rb ? "🚧 кордони закриті" : "🚪 приймає") + "</span></div>";
+    if (c.merc) h += "<div class='row'><span>Найманці (ПВК)</span><span>💰 " + full(c.merc) + "</span></div>";
+    else if (c.nprog != null) h += "<div class='row'><span>Ядерна програма</span><span>" + c.nprog + " / 5</span></div>";
+    h += "<div class='row'><span>Регіонів</span><span>" + regs + "</span></div>";
+    const als = (S.alliances || []).filter(a => (a.members || []).includes(o) && a.name !== "ООН").map(a => a.name);
+    if (als.length) h += "<div class='row'><span>Союзи</span><span>" + esc(als.join(", ")) + "</span></div>";
+    h += "<h3>Показники</h3>";
+    // показник, зміна за минулий раунд від подій і (пасивна)
+    const sg = (x) => { x = Math.round(x * 10) / 10; return x === 0 ? "" : "<b style='color:" + (x > 0 ? "#5fd06a" : "#e2554a") + "'>" + (x > 0 ? "+" : "") + String(x).replace(".", ",") + "</b>"; };
+    for (const k in STAT_NAMES) {
+      const v = c.s ? c.s[k] : null; if (v == null) continue;
+      const d = c.ds && c.ds[k], dA = d ? sg(d[0]) : "", dP = d ? sg(d[1]) : "";
+      h += "<div class='row' style='border:none'><span>" + STAT_NAMES[k] + "</span><span>" + (dA ? dA + " " : "") + (dP ? "<span style='opacity:.8'>(" + dP + ")</span> " : "") + String(v).replace(".", ",") + "</span></div><div class='bar'><i style='width:" + v + "%'></i></div>";
+    }
+    h += "<h3>Гравці</h3>" + (c.players && c.players.length
+        ? c.players.slice().sort((a, b) => a.role - b.role).map(x => "<div class='row'><span>" + esc(x.name) + "</span><span>" + esc(x.role_name) + "</span></div>").join("")
+        : "<div class='note' style='margin-top:0'>Ніхто не грає — країна лише реагує. Зайняти: <b>!роль " + esc(cname(o)) + "</b></div>");
+  }
+  document.getElementById("pbody").innerHTML = h;
+}
+
+// =====================================================================
+//  ХРОНІКА І ПРОГРАВАННЯ
+// =====================================================================
+const clist = document.getElementById("clist");
+let ARTS = [];        // індекс у chronicle → { a, el }
+let play = null;      // { list, pos, paused, pending, timer, endAt, left }
+
+// сезон за місяцем (для північної півкулі, де більшість фронтів)
+function seasonTag(d){
+  const m = +(String(d || "").split("-")[1] || 0);
+  if (m === 12 || m <= 2) return "<span title='Зима: північніше 45° втрати нападника ×1,3'>❄ зима</span>";
+  if (m === 3 || m === 4 || m === 10 || m === 11) return "<span title='Бездоріжжя у Східній Європі: втрати нападника ×1,15'>🌧 бездоріжжя</span>";
+  if (m >= 6 && m <= 9) return "<span title='Сезон дощів у тропіках: втрати нападника ×1,15'>☀ літо</span>";
+  return "<span>🌱 весна</span>";
+}
+function renderTop(){
+  const live = S ? S.moves.filter(m => !m.vetoed).length : 0;
+  document.getElementById("info").innerHTML = S ? "Раунд <b>" + S.round + "</b> <span>·</span> " + esc(S.date) + " " + seasonTag(S.date) + (S.nw ? " <b style='color:#9fc3ff'>☢❄ ядерна зима</b>" : "") + " <span>· ходів:</span> <b>" + live + "</b>" : "";
+  document.getElementById("nwfx").style.opacity = S && S.nw ? (S.nw.level >= 2 ? 0.32 : 0.2) : 0;
+  document.getElementById("cmeta").textContent = S ? "Раунд " + S.round + " · " + S.date : (SITE ? "завантаження…" : "немає зв'язку зі Streamer.bot");
+  const bMe = document.getElementById("bMe"), mc = typeof myCountry === "function" ? myCountry() : null;
+  bMe.textContent = ME ? "👤 " + (mc ? cname(mc) : (ME.name || ME.login)) : "👤 Увійти";
+  document.getElementById("bRelM").style.display = mc ? "" : "none";
+  const tn = S ? Math.round(S.tension || 0) : 0;
+  const word = tn < 20 ? "спокій" : tn < 45 ? "неспокійно" : tn < 70 ? "висока" : "на межі великої війни";
+  document.getElementById("tension").innerHTML = S ? "Напруга у світі: <b>" + tn + "</b> — " + word + "<div class='bar'><i style='width:" + tn + "%'></i></div>" : "";
+  const ml = document.getElementById("mlist");
+  ml.innerHTML = S && S.moves.length
+    ? S.moves.map(m => "<div class='mv" + (m.vetoed ? " vet" : "") + "'><span>#" + m.id + " " + esc(cname(m.country)) + " · " + esc(m.role) + " · " + esc(m.player) + "</span>" +
+                       (m.text ? ": " + esc(m.text) : " — 🔒 хід прихований до кінця раунду") + "</div>").join("")
+    : "<div class='note' style='margin:4px 0'>Ще немає ходів. Пишіть у чат <b>!хід текст</b></div>";
+  document.getElementById("bReplay").disabled = !(S && S.last_round && S.last_round.round);
+  const rl = document.getElementById("rlist");
+  const mr = S && S.last_round && S.last_round.move_results;
+  if (mr && mr.length) {
+    const cls = r => { r = (r || "").toLowerCase(); return r.startsWith("виконано") || r.startsWith("відбулося") ? ["ok","✓"] : r.startsWith("частково") ? ["half","½"] :
+                       r.startsWith("без змін") ? ["none","–"] : r.startsWith("заява") ? ["none","💬"] : r.startsWith("засуджено") ? ["bad","⚖"] : ["bad","✗"]; };
+    rl.innerHTML = "<div class='rhead' style='padding:10px 0 4px'>Результати раунду " + S.last_round.round + "</div>" +
+      mr.map(x => { const c = cls(x.result); return "<div class='res'><b class='" + c[0] + "'>" + c[1] + "</b> <span style='color:#9aa4ae'>" + esc(cname(x.country)) + " · " + esc(x.player) + ":</span> " +
+                    esc(x.text) + " <i>— " + esc(x.result) + (x.why ? ": " + esc(x.why) : "") + "</i></div>"; }).join("");
+  } else rl.innerHTML = "";
+}
+
+function renderChronicle(){
+  clist.innerHTML = ""; ARTS = [];
+  if (!S) return;
+  const ch = S.chronicle || [];
+  const rounds = [...new Set(ch.map(a => a.round))].sort((a, b) => b - a);
+  for (const r of rounds) {
+    const hd = document.createElement("div"); hd.className = "rhead"; hd.textContent = "Раунд " + r; clist.appendChild(hd);
+    ch.forEach((a, i) => {
+      if (a.round !== r) return;
+      const el = document.createElement("div"); el.className = "art";
+      el.innerHTML = "<div class='d'>" + esc(a.date) + "</div><div class='ti'>" + esc(a.title) + "</div><div class='tx'>" + md(a.text) + "</div>";
+      el.onclick = () => { if (play && !play.paused) { play.paused = true; play.left = Math.max(0, play.endAt - Date.now()); clearTimeout(play.timer); updPlayBtn(); } showArticle(i); };
+      clist.appendChild(el);
+      ARTS[i] = { a, el };
+    });
+  }
+  if (rounds.length) ARTS.forEach(x => { if (x && x.a.round === rounds[0]) x.el.classList.add("open"); });
+  if (SITE && olderRounds().length) { const b = document.createElement("button"); b.className = "btn"; b.id = "more"; b.textContent = "⬇ Раніші раунди (" + olderRounds().length + ")"; b.onclick = loadOlder; clist.appendChild(b); }
+}
+
+function showArticle(i){
+  const x = ARTS[i]; if (!x) return;
+  ARTS.forEach(y => y && y.el.classList.remove("cur"));
+  x.el.classList.add("cur", "open");
+  x.el.scrollIntoView({ block:"nearest" });
+  const ar = articleRegions(x.a), regs = ar.hl;
+  highlight(regs);
+  // стаття про ядерний удар → анімація ракети замість звичайного підльоту камери
+  const nk = nukesFor(x.a, regs);
+  if (nk.length) { if (play) { clearTimeout(play.timer); play.hold = true; } playNukes(nk, () => { if (play && play.hold) { play.hold = false; if (!play.paused) play.timer = setTimeout(() => nextArticle(1), 2500); } }); }
+  else flyTo(ar.fly);
+  // зміни кордонів, яких стосується ця стаття, проявляються після підльоту камери
+  if (play && play.pending) {
+    const cs = x.a.countries || [];
+    for (const id in play.pending) {
+      const nw = play.pending[id], old = owner[id];
+      if (regs.includes(id) || cs.includes(nw) || cs.includes(old)) {
+        setTimeout(() => { flashRegion(id, nw); afterOwnerChange(); }, 1700);
+        delete play.pending[id];
+      }
+    }
+  }
+  setTimeout(() => battlesFor(regs), 1700);
+}
+
+let ocTimer = null;
+function afterOwnerChange(){ clearTimeout(ocTimer); ocTimer = setTimeout(() => { drawBorders(); rebuildLabels(); updateLabels(); updateTroops(); drawCapitals(); renderPanel(); }, 900); }
+
+function nukesFor(a, regs){
+  if (!S || !S.last_round || !S.last_round.nukes || a.round !== S.last_round.round) return [];
+  const cs = a.countries || [], ttl = (a.title || "").toUpperCase(), res = [];
+  S.last_round.nukes.forEach((n, i) => {
+    const key = S.last_round.round + ":" + i;
+    if (playedNukes.has(key)) return;
+    if (regs.includes(n.region) || (/ЯДЕР|☢/.test(ttl) && (cs.includes(n.attacker) || cs.includes(n.owner)))) { playedNukes.add(key); res.push(n); }
+  });
+  return res;
+}
+function startPlayback(round, pending){
+  stopPlayback();
+  const list = [];
+  ARTS.forEach((x, i) => { if (x && x.a.round === round) list.push(i); });
+  if (!list.length) { applyPending(pending); battlesFor(null); return; }
+  play = { list, pos:-1, paused:false, pending: pending || null };
+  updPlayBtn();
+  nextArticle(1);
+}
+function articleMs(i){ const n = (ARTS[i].a.text || "").length; return Math.max(ARTICLE_MIN_MS, Math.min(ARTICLE_MAX_MS, n * 45)); }
+function nextArticle(step){
+  if (!play) return;
+  clearTimeout(play.timer);
+  play.pos = Math.max(0, play.pos + step);
+  if (play.pos >= play.list.length) { finishPlayback(); return; }
+  const i = play.list[play.pos];
+  showArticle(i);
+  const ms = articleMs(i);
+  play.endAt = Date.now() + ms; play.left = ms;
+  document.getElementById("pstat").textContent = (play.pos + 1) + " / " + play.list.length;
+  if (!play.paused && !play.hold) play.timer = setTimeout(() => nextArticle(1), ms);
+}
+function finishPlayback(){
+  if (!play) return;
+  // удари, про які не було окремої статті, — наприкінці
+  const left = nukesFor({ round:S.last_round && S.last_round.round, title:"ЯДЕР", countries:Object.keys(S.countries) }, []);
+  if (left.length) playNukes(left);
+  clearTimeout(play.timer);
+  applyPending(play.pending);
+  battlesFor(null);
+  hlLayer.clearLayers();
+  ARTS.forEach(y => y && y.el.classList.remove("cur"));
+  play = null; updPlayBtn();
+  document.getElementById("pstat").textContent = "";
+}
+function applyPending(p){
+  if (!p) return;
+  for (const id in p) flashRegion(id, p[id]);
+  afterOwnerChange();
+}
+function stopPlayback(){ if (play) { clearTimeout(play.timer); applyPending(play.pending); play = null; } updPlayBtn(); document.getElementById("pstat").textContent = ""; }
+function updPlayBtn(){ document.getElementById("bPlay").textContent = play && !play.paused ? "⏸" : "▶"; }
+setInterval(() => {
+  const bar = document.querySelector("#progress i");
+  if (!play || play.pos < 0) { bar.style.width = "0"; return; }
+  const ms = articleMs(play.list[play.pos]);
+  const left = play.paused ? play.left : Math.max(0, play.endAt - Date.now());
+  bar.style.width = (100 * (1 - left / ms)).toFixed(1) + "%";
+}, 200);
+
+document.getElementById("bPlay").onclick = () => {
+  if (!play) { if (S && S.last_round && S.last_round.round) startPlayback(S.last_round.round, null); return; }
+  if (play.paused) { play.paused = false; play.endAt = Date.now() + play.left; play.timer = setTimeout(() => nextArticle(1), play.left); }
+  else { play.paused = true; play.left = Math.max(0, play.endAt - Date.now()); clearTimeout(play.timer); }
+  updPlayBtn();
+};
+document.getElementById("bNext").onclick = () => { if (play) nextArticle(1); };
+document.getElementById("bPrev").onclick = () => { if (play) nextArticle(-1); };
+document.getElementById("bReplay").onclick = () => { if (S && S.last_round && S.last_round.round) { battleLayer.clearLayers(); arrowList = []; arrowLayer.clearLayers(); drawnBattles.clear(); battlePts = []; playedNukes.clear(); startPlayback(S.last_round.round, null); } };
+
+// =====================================================================
+//  СТАН
+// =====================================================================
+let animateNext = false;
+function applyState(d){
+  const animate = animateNext; animateNext = false;
+  if (play) { clearTimeout(play.timer); play = null; }
+  S = d; S._cnt = null;
+  for (const id in S.regions) if (S.regions[id][4]) NAME2ID[String(S.regions[id][4]).toLowerCase()] = id;
+  const newOwner = {}, pending = {};
+  let changed = 0;
+  for (const id in FEAT) newOwner[id] = S.regions[id] ? S.regions[id][0] : FEAT[id].p.o;
+  for (const id in newOwner) if (newOwner[id] !== owner[id]) { pending[id] = newOwner[id]; changed++; }
+
+  battleLayer.clearLayers(); arrowList = []; arrowLayer.clearLayers(); drawnBattles.clear(); battlePts = []; playedNukes.clear(); hlLayer.clearLayers();
+  renderTop(); renderChronicle(); drawThreats(); drawNukes(); renderTicker(); drawRes();
+
+  if (animate && S.last_round && S.last_round.round) {
+    // світ лишається «старим», зміни проявляються разом зі статтями хроніки
+    restyleAll(); rebuildLabels(); updateLabels();
+    startPlayback(S.last_round.round, changed ? pending : null);
+  } else {
+    owner = newOwner;
+    restyleAll(); rebuildLabels(); updateLabels();
+    battlesFor(null);
+  }
+  drawCapitals();
+  renderPanel();
+}
+
+// =====================================================================
+//  WEBSOCKET (Streamer.bot)
+// =====================================================================
+let ws = null, reqTimer = null;
+function send(o){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function doAction(name, args){ send({ request:"DoAction", id:"a" + Date.now(), action:{ name }, args: args || {} }); }
+function requestState(delay){ clearTimeout(reqTimer); reqTimer = setTimeout(() => doAction(ACTION_STATE), delay || 0); }
+function findGeo(m){
+  for (const c of [m, m && m.data, m && m.data && m.data.data, m && m.data && m.data.json]) {
+    let x = c; if (!x) continue;
+    if (typeof x === "string") { try { x = JSON.parse(x); } catch (e) { continue; } }
+    if (x && x.source === "geo") return x;
+  }
+  return null;
+}
+function busy(on){ document.getElementById("busy").style.display = on ? "block" : "none"; document.getElementById("bRound").disabled = on; document.getElementById("bUndo").disabled = on; }
+function toast(t){ const el = document.getElementById("toast"); el.textContent = t; el.style.display = "block"; setTimeout(() => el.style.display = "none", 6000); }
+
+function connect(){
+  try { ws = new WebSocket(WS_URL); } catch (e) { setTimeout(connect, 3000); return; }
+  ws.onopen = () => {
+    document.getElementById("conn").classList.add("on");
+    send({ request:"Subscribe", id:"sub", events:{ General:["Custom"] } });
+    requestState(300);
+  };
+  ws.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    const d = findGeo(m); if (!d) return;
+    switch (d.event) {
+      case "state":   applyState(d); break;
+      case "round":   animateNext = true; busy(false); requestState(); break;
+      case "undo":    animateNext = false; requestState(); break;
+      case "busy":    busy(true); break;
+      case "idle":    busy(false); break;
+      case "changed": requestState(1500); break;
+      case "error":   toast("Помилка стану: " + (d.message || "")); break;
+    }
+  };
+  ws.onclose = () => { document.getElementById("conn").classList.remove("on"); setTimeout(connect, 3000); };
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+}
+
+document.getElementById("bRound").onclick = () => {
+  if (!S) return toast(NOCONN);
+  const live = S.moves.filter(m => !m.vetoed).length;
+  if (!live) return toast("У раунді ще немає ходів");
+  if (confirm("Порахувати раунд " + S.round + " (" + live + " ход(ів))?")) { busy(true); doAction(ACTION_ROUND, { geoMode:"round" }); }
+};
+document.getElementById("bUndo").onclick = () => {
+  if (!S) return toast(NOCONN);
+  if (confirm("Відкотити світ на один раунд назад?")) doAction(ACTION_ROUND, { geoMode:"undo" });
+};
+
+// тестовий режим без Streamer.bot: geo_map.html?test=state.js (файл задає window.TEST_STATE і TEST_PREV)
+
+// =====================================================================
+//  САЙТ ДЛЯ ГРАВЦІВ (GitHub Pages): state.json замість WebSocket, вхід через Twitch,
+//  «Моя країна», відносини (лише представникам країни), гравці, архів хроніки.
+// =====================================================================
+function myPl(){ return ME && S && S.pl_ids ? S.pl_ids[ME.id] : null; }           // [країна, роль, нік]
+function myCountry(){ const p = myPl(); return p && S.countries[p[0]] ? p[0] : null; }
+function relOf(a, b){ if (!S || !S.relations || a === b) return null; const k = a < b ? a + "-" + b : b + "-" + a; const v = S.relations[k]; return v == null ? 0 : +v; }
+function relColor(v){
+  const t = Math.max(-1, Math.min(1, v / 100));
+  const base = [92, 98, 106], hi = t >= 0 ? [70, 190, 95] : [215, 70, 60], f = Math.pow(Math.abs(t), 0.7);
+  const c = base.map((x, i) => Math.round(x + (hi[i] - x) * f));
+  return "#" + c.map(x => x.toString(16).padStart(2, "0")).join("");
+}
+function relWord(v){ return v >= 60 ? "союзницькі" : v >= 25 ? "дружні" : v > -25 ? "нейтральні" : v > -60 ? "ворожі" : "на межі війни"; }
+function relTxt(v){ v = Math.round(v); return "<b style='color:" + relColor(v * 1.4) + "'>" + (v > 0 ? "+" : "") + v + "</b> <span style='color:#9aa4ae'>" + relWord(v) + "</span>"; }
+
+function showRelations(){
+  const c = myCountry(); if (!c) return showMe();
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null; alOpen = null; alFilter = null; resFilter = null;
+  relMode = c; restyleAll();
+  const list = Object.keys(S.countries).filter(x => x !== c).map(x => [x, relOf(c, x)]).filter(x => x[1] !== 0).sort((a, b) => b[1] - a[1]);
+  const row = x => "<div class='al' onclick='showCountryRel(\"" + x[0] + "\")'><span>" + esc(cname(x[0])) + "</span><span>" + relTxt(x[1]) + "</span></div>";
+  let h = "<h2>Відносини</h2><div class='sub'>Очима: <b>" + esc(cname(c)) + "</b> · зелений — друзі, червоний — вороги, сірий — нейтрально</div>";
+  h += "<div class='legend'><i style='background:" + relColor(-100) + "'></i>−100<i style='background:" + relColor(0) + "'></i>0<i style='background:" + relColor(100) + "'></i>+100</div>";
+  const fr = list.filter(x => x[1] > 0), en = list.filter(x => x[1] < 0).reverse();
+  h += "<h3>Найкращі</h3>" + (fr.length ? fr.slice(0, 15).map(row).join("") : "<div class='note' style='margin-top:0'>немає</div>");
+  h += "<h3>Найгірші</h3>" + (en.length ? en.slice(0, 15).map(row).join("") : "<div class='note' style='margin-top:0'>немає</div>");
+  h += "<div class='note'>Решта країн — нейтрально (0). Клік по країні на карті — деталі.</div>";
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+}
+function showCountryRel(cid){ const keep = relMode; showCountry(cid); if (keep) { relMode = keep; alFilter = null; restyleAll(); } }
+
+const TT_UA = { defense:"оборонний договір", nonaggression:"пакт про ненапад", economic:"економічна угода", comprehensive:"всебічний договір", ceasefire:"перемир'я", peace:"мир", transit:"транзит військ" };
+function termsTxt(t){
+  if (!t || typeof t !== "object") return "";
+  const out = [];
+  if (t.give) { const g = t.give; out.push("передача " + (g.regions === "all_core" ? "усіх рідних земель" : /^border:/.test(g.regions || "") ? g.regions.split(":")[1] + " прикордонних регіонів" : Array.isArray(g.regions) ? g.regions.map(rname).join(", ") : "регіонів") + " від " + cname(g.from) + " до " + cname(g.to)); }
+  if (t.reparations) { const r = t.reparations; out.push("репарації " + cname(r.payer) + " → " + cname(r.payee) + ": −" + r.amount + " економіки × " + r.rounds + " раунд(ів)"); }
+  if (t.transit) out.push("транзит військ " + cname(t.transit.guest) + " через " + cname(t.transit.host));
+  return out.join("; ");
+}
+function showMe(){
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null; if (relMode || alFilter || resFilter) { relMode = null; alFilter = null; resFilter = null; alOpen = null; restyleAll(); }
+  let h = "";
+  if (!ME) {
+    h = "<h2>Вхід</h2><div class='sub'>Увійди через Twitch, щоб бачити свою країну, відносини з іншими державами й пропозиції, які чекають твоєї відповіді.</div>" +
+        (S && S.twitch_client ? "<button class='btn main' onclick='twitchLogin()'>Увійти через Twitch</button>" : "<div class='note'>Вхід ще не налаштовано.</div>") +
+        "<div class='note'>Сайт бачить лише твій нік і Twitch-ID — нічого не публікує й не пише в чат.</div>";
+  } else {
+    const p = myPl(), c = myCountry();
+    h = "<h2>" + esc(ME.name || ME.login) + "</h2>";
+    if (!p || !c) {
+      h += "<div class='sub'>Ти ще не граєш.</div><div class='note' style='margin-top:0'>Займи країну в чаті: <b>!роль Країна</b> (або <b>!роль Країна N</b> для міністра).</div>";
+    } else {
+      const C = S.countries[c], role = p[1];
+      const title = role === 0 ? (C.lt || "Лідер") : ["лідер", "міністр оборони", "міністр економіки", "міністр закордонних справ", "міністр внутрішньої політики", "міністр медицини", "міністр освіти і науки"][role] || "";
+      h += "<div class='sub'><span class='sw' style='background:" + colorOf(c) + "'></span>" + esc(title) + " · <a href='#' onclick='showCountry(\"" + c + "\");return false' style='color:var(--gold)'>" + esc(cname(c)) + "</a></div>";
+      const mine = (S.moves || []).filter(m => String(m.player).toLowerCase() === String(p[2] || ME.login).toLowerCase());
+      h += "<div class='row'><span>Ходи цього раунду</span><span><b>" + mine.length + "</b> з 3</span></div>";
+      const sg = (x) => { x = Math.round(x * 10) / 10; return x === 0 ? "" : "<b style='color:" + (x > 0 ? "#5fd06a" : "#e2554a") + "'>" + (x > 0 ? "+" : "") + String(x).replace(".", ",") + "</b>"; };
+      h += "<h3>Показники</h3>";
+      for (const k in STAT_NAMES) { const v = C.s ? C.s[k] : null; if (v == null) continue; const d = C.ds && C.ds[k];
+        h += "<div class='row'><span>" + STAT_NAMES[k] + "</span><span>" + (d ? sg(d[0]) + " " + (sg(d[1]) ? "<span style='opacity:.8'>(" + sg(d[1]) + ")</span> " : "") : "") + String(v).replace(".", ",") + "</span></div>"; }
+      const pin = (S.proposals || []).filter(x => x.to === c), pout = (S.proposals || []).filter(x => x.from === c);
+      h += "<h3>Пропозиції нам</h3>" + (pin.length ? pin.map(x => "<div class='row' style='display:block'><b>#" + x.id + "</b> " + esc(cname(x.from)) + " — " + esc(TT_UA[x.type] || x.type) +
+           (termsTxt(x.terms) ? "<div class='note' style='margin:2px 0 0'>" + esc(termsTxt(x.terms)) + "</div>" : "") + "<div class='note' style='margin:2px 0 0'>!пропозиція так " + x.id + " · ні " + x.id + " · контр " + x.id + " умови</div></div>").join("")
+           : "<div class='note' style='margin-top:0'>немає</div>");
+      if (pout.length) h += "<h3>Наші пропозиції</h3>" + pout.map(x => "<div class='row'><span>#" + x.id + " " + esc(cname(x.to)) + "</span><span>" + esc(TT_UA[x.type] || x.type) + " · чекає</span></div>").join("");
+      const ops = (S.ops || []).filter(o => String(o.by) === String(ME.id));
+      if (ops.length) {
+        const OPN = { siege:"облога", air_blockade:"закрите небо", naval_blockade:"морська блокада", strait_blockade:"блокада протоки" };
+        h += "<h3>Мої операції</h3>" + ops.map(o => "<div class='row'><span>#" + o.id + " " + esc(OPN[o.type] || o.type) + " — " + esc(o.type === "strait_blockade" ? o.name : o.type === "naval_blockade" ? cname(o.target) : rname(o.target)) + "</span><span>" +
+             (o.started === S.round ? "нова" : o.confirmed === S.round ? "✓ продовжено" : "<b style='color:#ffcf6b'>чекає !облога так " + o.id + "</b>") + "</span></div>").join("");
+      }
+      const tr = (S.treaties || []).filter(t => t.a === c || t.b === c);
+      if (tr.length) h += "<h3>Договори</h3>" + tr.map(t => "<div class='row'><span>" + (TR_UA[t.t] || t.t) + "</span><span>" + esc(cname(t.a === c ? t.b : t.a)) + "</span></div>").join("");
+      h += "<div style='margin-top:14px'><button class='btn main' onclick='showRelations()'>🤝 Відносини на карті</button></div>";
+    }
+    h += "<div class='note'><a href='#' onclick='twitchLogout();return false' style='color:var(--muted)'>Вийти</a></div>";
+  }
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+}
+function showPlayers(){
+  if (!S) return;
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null; if (relMode || alFilter || resFilter) { relMode = null; alFilter = null; resFilter = null; alOpen = null; restyleAll(); }
+  const cs = Object.keys(S.countries).filter(c => (S.countries[c].players || []).length).sort((a, b) => S.countries[b].players.length - S.countries[a].players.length || cname(a).localeCompare(cname(b)));
+  let n = 0; cs.forEach(c => n += S.countries[c].players.length);
+  let h = "<h2>Гравці</h2><div class='sub'>" + n + " гравців у " + cs.length + " країнах · клік — країна на карті</div>";
+  for (const c of cs) {
+    h += "<div class='al' onclick='showCountry(\"" + c + "\")'><span><span class='sw' style='background:" + colorOf(c) + "'></span>" + esc(cname(c)) + "</span><span>" + S.countries[c].players.length + "</span></div>";
+    h += "<div class='note' style='margin:2px 0 8px'>" + S.countries[c].players.slice().sort((a, b) => a.role - b.role).map(x => esc(x.name) + " <span style='opacity:.7'>(" + esc(x.role_name) + ")</span>").join(", ") + "</div>";
+  }
+  if (!cs.length) h += "<div class='note'>Поки ніхто не грає. Зайняти країну: <b>!роль Країна</b></div>";
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+}
+
+// ---------- Twitch (implicit flow: токен лише в браузері, сайт дізнається тільки ID і нік) ----------
+function twitchLogin(){
+  if (!S || !S.twitch_client) return toast("Вхід ще не налаштовано");
+  const st = Math.random().toString(36).slice(2); try { sessionStorage.setItem("geoState", st); } catch (e) {}
+  location.href = "https://id.twitch.tv/oauth2/authorize?client_id=" + encodeURIComponent(S.twitch_client) + "&redirect_uri=" + encodeURIComponent(location.origin + location.pathname) +
+                  "&response_type=token&scope=&state=" + st;
+}
+function twitchLogout(){ ME = null; try { localStorage.removeItem("geoMe"); } catch (e) {} renderTop(); showMe(); }
+async function twitchCallback(){
+  const h = new URLSearchParams(location.hash.slice(1));
+  const tok = h.get("access_token"); if (!tok) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  let st = null; try { st = sessionStorage.getItem("geoState"); } catch (e) {}
+  if (st && h.get("state") !== st) return toast("Вхід скасовано: невідповідність state");
+  const tries = 20; for (let i = 0; i < tries && !(S && S.twitch_client); i++) await new Promise(r => setTimeout(r, 300));
+  try {
+    const r = await fetch("https://api.twitch.tv/helix/users", { headers:{ "Authorization":"Bearer " + tok, "Client-Id": S.twitch_client } });
+    const j = await r.json(); const u = j.data && j.data[0]; if (!u) throw new Error("немає користувача");
+    ME = { id:u.id, login:u.login, name:u.display_name || u.login };
+    try { localStorage.setItem("geoMe", JSON.stringify(ME)); } catch (e) {}
+    renderTop(); showMe();
+  } catch (e) { toast("Не вдалося увійти через Twitch"); }
+}
+
+// ---------- архів хроніки: старіші раунди підвантажуються з chron/<світ>/<раунд>.json ----------
+const ARCH = {};   // раунд → статті
+function mergeArchive(){
+  if (!S || !S.chronicle) return;
+  const have = new Set(S.chronicle.map(a => a.round));
+  Object.keys(ARCH).map(Number).sort((a, b) => b - a).forEach(r => { if (!have.has(r)) S.chronicle.push(...ARCH[r]); });
+}
+function olderRounds(){
+  if (!S || !S.chron_rounds) return [];
+  const have = new Set((S.chronicle || []).map(a => a.round));
+  return S.chron_rounds.filter(r => !have.has(r)).sort((a, b) => b - a);
+}
+async function loadOlder(){
+  const rs = olderRounds().slice(0, 5); if (!rs.length) return;
+  for (const r of rs) { try { const x = await (await fetch("chron/" + S.world + "/" + r + ".json?v=" + (S.published || ""))).json(); ARCH[r] = x; } catch (e) { ARCH[r] = []; } }
+  const keep = clist.scrollTop; mergeArchive(); renderChronicle(); clist.scrollTop = keep;
+}
+
+// ---------- завантаження стану ----------
+let lastPub = null;
+async function loadState(){
+  try {
+    const d = await (await fetch("state.json?t=" + Date.now(), { cache:"no-store" })).json();
+    if (d.published && d.published === lastPub) return;
+    const first = !S; lastPub = d.published;
+    for (const r in ARCH) if (!S || S.world !== d.world || +r >= d.round) delete ARCH[r];   // новий світ або відкат
+    animateNext = !first && d.round > S.round;
+    d.chronicle = d.chronicle || [];
+    S = d; mergeArchive();
+    applyState(S);
+    if (first && location.hash.includes("access_token")) twitchCallback();
+  } catch (e) { if (!S) document.getElementById("cmeta").textContent = "не вдалося завантажити стан світу"; }
+}
+
+document.getElementById("bPl").onclick = showPlayers;
+document.getElementById("bMe").onclick = showMe;
+document.getElementById("bRelM").onclick = showRelations;
+document.getElementById("chead").addEventListener("click", e => { if (innerWidth <= 820 && !e.target.closest("button")) document.getElementById("chron").classList.toggle("open"); });
+
+if (window.TEST_PREV) { applyState(window.TEST_PREV); }
+if (window.TEST_STATE) { animateNext = !!window.TEST_PREV; applyState(window.TEST_STATE); }
+else if (SITE) { drawBorders(); rebuildLabels(); updateLabels(); renderTop(); loadState(); setInterval(loadState, 60000); document.addEventListener("visibilitychange", () => { if (!document.hidden) loadState(); }); }
+else { drawBorders(); rebuildLabels(); updateLabels(); renderTop(); connect(); }
+</script>
+</body>
+</html>
