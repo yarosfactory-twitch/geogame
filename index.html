@@ -1402,13 +1402,24 @@ function relColor(v){
 function relWord(v){ return v >= 60 ? "союзницькі" : v >= 25 ? "дружні" : v > -25 ? "нейтральні" : v > -60 ? "ворожі" : "на межі війни"; }
 function relTxt(v){ v = Math.round(v); return "<b style='color:" + relColor(v * 1.4) + "'>" + (v > 0 ? "+" : "") + v + "</b> <span style='color:#9aa4ae'>" + relWord(v) + "</span>"; }
 
+// зміна відносин за останній раунд: ▲8 / ▼5, при наведенні — причини
+function relDeltaTxt(a, b){
+  const rc = S && S.rel_change; if (!rc || !rc.d) return "";
+  const k = a < b ? a + "-" + b : b + "-" + a, d = Math.round(rc.d[k] || 0); if (!d) return "";
+  const html = "<b style='color:" + (d > 0 ? "#5fd06a" : "#e2554a") + ";font-size:.85em'>" + (d > 0 ? "▲" : "▼") + Math.abs(d) + "</b> ";
+  const w = rc.w && rc.w[k];
+  if (!w || !w.length) return html;
+  const fmt = x => { x = Math.round(x * 10) / 10; return "<b style='color:" + (x > 0 ? "#5fd06a" : x < 0 ? "#e2554a" : "#9aa4ae") + "'>" + (x > 0 ? "+" : "") + String(x).replace(".", ",") + "</b>"; };
+  const t = "<div class='wh'>За раунд " + rc.round + "</div>" + w.slice().sort((p, q) => Math.abs(q[1]) - Math.abs(p[1])).map(x => "<div class='wr'><span>" + esc(x[0]) + "</span>" + fmt(x[1]) + "</div>").join("");
+  return "<span class='dwh' tabindex='0' onclick='event.stopPropagation()'>" + html + "<div class='whytip'>" + t + "</div></span>";
+}
 function showRelations(){
   const c = myCountry(); if (!c) return showMe();
   if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
   selectedId = null; alOpen = null; alFilter = null; resFilter = null;
   relMode = c; restyleAll();
   const list = Object.keys(S.countries).filter(x => x !== c).map(x => [x, relOf(c, x)]).filter(x => x[1] !== 0).sort((a, b) => b[1] - a[1]);
-  const row = x => "<div class='al' onclick='showCountryRel(\"" + x[0] + "\")'><span>" + esc(cname(x[0])) + "</span><span>" + relTxt(x[1]) + "</span></div>";
+  const row = x => "<div class='al' onclick='showCountryRel(\"" + x[0] + "\")'><span>" + esc(cname(x[0])) + "</span><span>" + relDeltaTxt(c, x[0]) + relTxt(x[1]) + "</span></div>";
   let h = "<h2>Відносини</h2><div class='sub'>Очима: <b>" + esc(cname(c)) + "</b> · зелений — друзі, червоний — вороги, сірий — нейтрально</div>";
   h += "<div class='legend'><i style='background:" + relColor(-100) + "'></i>−100<i style='background:" + relColor(0) + "'></i>0<i style='background:" + relColor(100) + "'></i>+100</div>";
   const fr = list.filter(x => x[1] > 0), en = list.filter(x => x[1] < 0).reverse();
