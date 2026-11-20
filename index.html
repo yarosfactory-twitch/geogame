@@ -1109,7 +1109,7 @@ function renderPanel(){
     for (const k in STAT_NAMES) {
       const v = c.s ? c.s[k] : null; if (v == null) continue;
       const d = c.ds && c.ds[k], dA = d ? sg(d[0]) : "", dP = d ? sg(d[1]) : "";
-      h += "<div class='row' style='border:none'><span>" + STAT_NAMES[k] + "</span><span>" + (dA ? dA + " " : "") + (dP ? "<span style='opacity:.8'>(" + dP + ")</span> " : "") + String(v).replace(".", ",") + "</span></div><div class='bar'><i style='width:" + v + "%'></i></div>";
+      h += "<div class='row' style='border:none'><span>" + STAT_NAMES[k] + "</span><span>" + (dA ? dA + " " : "") + (dP ? "<span style='opacity:.8'>(" + dP + ")</span> " : "") + String(Math.round(v * 10) / 10).replace(".", ",") + "</span></div><div class='bar'><i style='width:" + v + "%'></i></div>";
     }
     h += "<h3>Гравці</h3>" + (c.players && c.players.length
         ? c.players.slice().sort((a, b) => a.role - b.role).map(x => "<div class='row'><span>" + esc(x.name) + "</span><span>" + esc(x.role_name) + "</span></div>").join("")
@@ -1433,7 +1433,7 @@ function showMe(){
       const sg = (x) => { x = Math.round(x * 10) / 10; return x === 0 ? "" : "<b style='color:" + (x > 0 ? "#5fd06a" : "#e2554a") + "'>" + (x > 0 ? "+" : "") + String(x).replace(".", ",") + "</b>"; };
       h += "<h3>Показники</h3>";
       for (const k in STAT_NAMES) { const v = C.s ? C.s[k] : null; if (v == null) continue; const d = C.ds && C.ds[k];
-        h += "<div class='row'><span>" + STAT_NAMES[k] + "</span><span>" + (d ? sg(d[0]) + " " + (sg(d[1]) ? "<span style='opacity:.8'>(" + sg(d[1]) + ")</span> " : "") : "") + String(v).replace(".", ",") + "</span></div>"; }
+        h += "<div class='row'><span>" + STAT_NAMES[k] + "</span><span>" + (d ? sg(d[0]) + " " + (sg(d[1]) ? "<span style='opacity:.8'>(" + sg(d[1]) + ")</span> " : "") : "") + String(Math.round(v * 10) / 10).replace(".", ",") + "</span></div>"; }
       const pin = (S.proposals || []).filter(x => x.to === c), pout = (S.proposals || []).filter(x => x.from === c);
       h += "<h3>Пропозиції нам</h3>" + (pin.length ? pin.map(x => "<div class='row' style='display:block'><b>#" + x.id + "</b> " + esc(cname(x.from)) + " — " + esc(TT_UA[x.type] || x.type) +
            (termsTxt(x.terms) ? "<div class='note' style='margin:2px 0 0'>" + esc(termsTxt(x.terms)) + "</div>" : "") + "<div class='note' style='margin:2px 0 0'>!пропозиція так " + x.id + " · ні " + x.id + " · контр " + x.id + " умови</div></div>").join("")
