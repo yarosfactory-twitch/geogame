@@ -141,6 +141,9 @@
   .dwh { position:relative; cursor:help; outline:none; }
   .whytip { display:none; position:absolute; right:0; bottom:130%; z-index:2000; background:#10161d; border:1px solid var(--gold); border-radius:6px; padding:8px 10px; min-width:230px; max-width:300px; font-size:12px; line-height:1.45; white-space:normal; text-align:left; box-shadow:0 6px 18px rgba(0,0,0,.6); color:var(--ink); font-weight:normal; }
   .dwh:hover .whytip, .dwh:focus .whytip { display:block; }
+  .dwh.dwr { position:static; }   /* відносини: підказка прив'язана до всього рядка, щоб не вилазила за панель */
+  .al.relrow { position:relative; }
+  .dwr .whytip { right:0; left:auto; bottom:100%; min-width:0; width:max-content; max-width:100%; }
   .whytip .wh { color:var(--gold); font-size:11px; letter-spacing:.06em; text-transform:uppercase; margin:4px 0 2px; }
   .whytip .wr { display:flex; justify-content:space-between; gap:10px; }
   /* ---------- сайт для гравців ---------- */
@@ -1411,7 +1414,7 @@ function relDeltaTxt(a, b){
   if (!w || !w.length) return html;
   const fmt = x => { x = Math.round(x * 10) / 10; return "<b style='color:" + (x > 0 ? "#5fd06a" : x < 0 ? "#e2554a" : "#9aa4ae") + "'>" + (x > 0 ? "+" : "") + String(x).replace(".", ",") + "</b>"; };
   const t = "<div class='wh'>За раунд " + rc.round + "</div>" + w.slice().sort((p, q) => Math.abs(q[1]) - Math.abs(p[1])).map(x => "<div class='wr'><span>" + esc(x[0]) + "</span>" + fmt(x[1]) + "</div>").join("");
-  return "<span class='dwh' tabindex='0' onclick='event.stopPropagation()'>" + html + "<div class='whytip'>" + t + "</div></span>";
+  return "<span class='dwh dwr' tabindex='0' onclick='event.stopPropagation()'>" + html + "<div class='whytip'>" + t + "</div></span>";
 }
 function showRelations(){
   const c = myCountry(); if (!c) return showMe();
@@ -1419,7 +1422,7 @@ function showRelations(){
   selectedId = null; alOpen = null; alFilter = null; resFilter = null;
   relMode = c; restyleAll();
   const list = Object.keys(S.countries).filter(x => x !== c).map(x => [x, relOf(c, x)]).filter(x => x[1] !== 0).sort((a, b) => b[1] - a[1]);
-  const row = x => "<div class='al' onclick='showCountryRel(\"" + x[0] + "\")'><span>" + esc(cname(x[0])) + "</span><span>" + relDeltaTxt(c, x[0]) + relTxt(x[1]) + "</span></div>";
+  const row = x => "<div class='al relrow' onclick='showCountryRel(\"" + x[0] + "\")'><span>" + esc(cname(x[0])) + "</span><span>" + relDeltaTxt(c, x[0]) + relTxt(x[1]) + "</span></div>";
   let h = "<h2>Відносини</h2><div class='sub'>Очима: <b>" + esc(cname(c)) + "</b> · зелений — друзі, червоний — вороги, сірий — нейтрально</div>";
   h += "<div class='legend'><i style='background:" + relColor(-100) + "'></i>−100<i style='background:" + relColor(0) + "'></i>0<i style='background:" + relColor(100) + "'></i>+100</div>";
   const fr = list.filter(x => x[1] > 0), en = list.filter(x => x[1] < 0).reverse();
