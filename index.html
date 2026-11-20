@@ -911,13 +911,15 @@ document.getElementById("bTr").onclick = () => showTreaties(null);
 // ---------- ресурси й біржа ----------
 const RG = { energy:["⚡","Енергоносії","економіка"], food:["🌾","Продовольство","стабільність"], metals:["⛏","Метали","мобілізація й утримання армії"], strategic:["☢","Стратегічні","інновації (уран — ядерна програма з 60)"],
              raw:["🌲","Сировина","економіка ×0,5"], hub:["⚓","Торгові хаби","економіка"], industry:["🏭","Промисловість","інновації"] };
+const RES_ICON = { "фінансовий центр":"🏦" };   // іконка за ресурсом, якщо відрізняється від групи
+function resIcon(g, item){ return RES_ICON[String(item || "").replace("*", "")] || (RG[g] || ["•"])[0]; }
 const resLayer = L.layerGroup().addTo(map);
 function drawRes(){
   resLayer.clearLayers();
   if (!S || !S.res || map.getZoom() < 4.6) return;
   const b = map.getBounds().pad(0.1);
   for (const id in S.res) { const F = FEAT[id]; if (!F || !b.contains(F.p.c)) continue;
-    resLayer.addLayer(L.marker(F.p.c, { icon:L.divIcon({ className:"resi", html:"<span title='" + esc(S.res[id][1]) + "'>" + (RG[S.res[id][0]] || ["•"])[0] + "</span>", iconSize:null }), interactive:false, zIndexOffset:500 })); }
+    resLayer.addLayer(L.marker(F.p.c, { icon:L.divIcon({ className:"resi", html:"<span title='" + esc(S.res[id][1]) + "'>" + resIcon(S.res[id][0], S.res[id][1]) + "</span>", iconSize:null }), interactive:false, zIndexOffset:500 })); }
 }
 map.on("zoomend moveend", drawRes);
 function priceChg(it){ const h = S.phist && S.phist[it]; if (!h || h.length < 2) return 0; return (h[h.length - 1] - h[h.length - 2]) / Math.max(1, h[h.length - 2]) * 100; }
@@ -933,7 +935,7 @@ function showRes(sel){
   selectedId = null; alOpen = null; alFilter = null;
   const cnt = {}; for (const id in S.res) cnt[S.res[id][0]] = (cnt[S.res[id][0]] || 0) + 1;
   let h = "<h2>Ресурси</h2><div class='sub'>Кожен регіон групи: +0,3 щораунду (окупований — 50%), максимум +1,5 з групи; ціна на біржі множить бонус</div>";
-  Object.keys(RG).forEach(g => { h += "<div class='al" + (g === sel ? " on" : "") + "' onclick='showRes(\"" + g + "\")'><span>" + RG[g][0] + " " + RG[g][1] + "</span><span>" + (cnt[g] || 0) + "</span></div>" +
+  Object.keys(RG).forEach(g => { h += "<div class='al" + (g === sel ? " on" : "") + "' onclick='showRes(\"" + g + "\")'><span>" + (g === "hub" ? "⚓🏦" : RG[g][0]) + " " + RG[g][1] + "</span><span>" + (cnt[g] || 0) + "</span></div>" +
     (g === sel ? "<div class='note' style='margin:2px 0 8px'>Бонус: " + RG[g][2] + "</div>" : ""); });
   document.getElementById("pbody").innerHTML = h;
   document.getElementById("panel").style.display = "block";
@@ -1070,7 +1072,7 @@ function renderPanel(){
     if (S.res) {
       const mine = {}; for (const id in S.res) if (owner[id] === o) { const g = S.res[id][0]; (mine[g] = mine[g] || []).push(S.res[id][1] + (S.regions[id] && S.regions[id][2] && S.regions[id][2] !== o ? "*" : "")); }
       const gs = Object.keys(mine);
-      if (gs.length) h += "<div class='row'><span>Ресурси</span><span style='text-align:right'>" + gs.map(g => RG[g][0] + " " + mine[g].map(esc).join(", ")).join("<br>") + "</span></div>";
+      if (gs.length) h += "<div class='row'><span>Ресурси</span><span style='text-align:right'>" + gs.map(g => g === "hub" ? mine[g].map(it => resIcon(g, it) + " " + esc(it)).join(", ") : RG[g][0] + " " + mine[g].map(esc).join(", ")).join("<br>") + "</span></div>";
     }
     const myTr = (S.treaties || []).filter(t => t.a === o || t.b === o);
     if (myTr.length) h += "<div class='row'><span>Договори</span><span style='text-align:right'>" + myTr.map(t => (TR_UA[t.t] || t.t) + " " + esc(cname(t.a === o ? t.b : t.a))).join("<br>") + "</span></div>";
