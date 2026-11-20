@@ -596,13 +596,8 @@ function drawNukes(){
 // ---------- анімація ядерного удару: ракета дугою зі столиці, сирена, спалах, ударні хвилі ----------
 const nukeFx = L.layerGroup().addTo(map);
 const playedNukes = new Set();
-let siren = null;
-function sirenStart(){ try { if (!siren) { siren = new Audio("siren.mp3"); siren.loop = true; } siren.volume = 0.8; siren.currentTime = 0; siren.play().catch(() => {}); } catch (e) {} }
-function sirenStop(){
-  if (!siren) return;
-  const a = siren; let v = a.volume;
-  const t = setInterval(() => { v -= 0.08; if (v <= 0) { clearInterval(t); a.pause(); a.volume = 0.8; } else a.volume = v; }, 80);
-}
+// звук удару (nuke.mp3, 20 с): 0–3 с сирена, 3–10,37 с політ ракети, 10,37 с вибух, далі вибух затихає. Анімацію ведемо за часом звуку.
+const NK_LAUNCH = 3.0, NK_IMPACT = 10.37, NK_END = 20.0;
 function nukeStart(n){
   const c = S.countries[n.attacker];
   if (c && c.cap && FEAT[c.cap]) return FEAT[c.cap].p.c;
@@ -617,46 +612,58 @@ function playNukes(list, done){
 function launchNuke(n, done){
   const T = FEAT[n.region], from = nukeStart(n);
   if (!T || !from) { if (done) done(); return; }
-  if (SITE) { flyTo([n.region]); if (done) setTimeout(done, 1500); return; }   // на сайті без сирени й анімації
+  if (SITE) { flyTo([n.region]); if (done) setTimeout(done, 1500); return; }   // на сайті без звуку й анімації
   const to = T.p.c;
-  map.flyToBounds(L.latLngBounds([from, to]).pad(0.35), { maxZoom:6, duration:1.2 });
-  setTimeout(() => {
-    sirenStart();
-    const k = Math.cos((from[0] + to[0]) / 2 * Math.PI / 180) || 1;
-    const a = [from[1] * k, from[0]], b = [to[1] * k, to[0]];
-    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    let nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len; if (ny < 0) { nx = -nx; ny = -ny; }   // дуга вигинається «вгору» (на північ)
-    const c = [(a[0] + b[0]) / 2 + nx * len * 0.35, (a[1] + b[1]) / 2 + ny * len * 0.35];
-    const at = (t) => { const u = 1 - t; const x = u*u*a[0] + 2*u*t*c[0] + t*t*b[0], y = u*u*a[1] + 2*u*t*c[1] + t*t*b[1]; return [y, x / k]; };
-    const trail = L.polyline([from], { renderer, color:"#d9d4c7", weight:3, opacity:0.75, dashArray:"2 6", interactive:false });
-    const glow = L.polyline([from], { renderer, color:"#ff9a3c", weight:6, opacity:0.25, interactive:false });
-    const head = L.marker(from, { icon: L.divIcon({ className:"warhead", html:"<span></span>", iconSize:null }), interactive:false, zIndexOffset:3000 });
-    nukeFx.addLayer(glow); nukeFx.addLayer(trail); nukeFx.addLayer(head);
-    const dur = 2600, t0 = performance.now(), pts = [from];
-    function step(now){
-      const t = Math.min(1, (now - t0) / dur), e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;   // розгін і падіння
-      const p = at(e); pts.push(p); trail.setLatLngs(pts); glow.setLatLngs(pts); head.setLatLng(p);
-      if (t < 1) { requestAnimationFrame(step); return; }
-      nukeFx.removeLayer(head);
-      impact(to, T);
-      sirenStop();
-      // слід поволі тане
-      let o = 0.75; const fade = setInterval(() => { o -= 0.05; if (o <= 0) { clearInterval(fade); nukeFx.removeLayer(trail); nukeFx.removeLayer(glow); } else { trail.setStyle({ opacity:o }); glow.setStyle({ opacity:o / 3 }); } }, 120);
-      setTimeout(() => { if (done) done(); }, 2200);
+  // звук; якщо не грає — той самий таймлайн за годинником
+  let audio = null, audioOk = false; const t0 = performance.now();
+  try { audio = new Audio("nuke.mp3"); audio.volume = 0.9; audio.addEventListener("playing", () => { audioOk = true; }); audio.play().catch(() => {}); } catch (e) {}
+  const clock = () => audioOk && audio && !audio.ended ? audio.currentTime : (performance.now() - t0) / 1000;
+  map.flyToBounds(L.latLngBounds([from, to]).pad(0.35), { maxZoom:6, duration:2.4 });
+  // сирена: пульсує точка пуску
+  const pad = L.circleMarker(from, { renderer, radius:6, color:"#ff3b2f", weight:2, fillColor:"#ff3b2f", fillOpacity:0.8, interactive:false });
+  nukeFx.addLayer(pad);
+  const k = Math.cos((from[0] + to[0]) / 2 * Math.PI / 180) || 1;
+  const a = [from[1] * k, from[0]], b = [to[1] * k, to[0]];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  let nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len; if (ny < 0) { nx = -nx; ny = -ny; }   // дуга вигинається «вгору» (на північ)
+  const c = [(a[0] + b[0]) / 2 + nx * len * 0.35, (a[1] + b[1]) / 2 + ny * len * 0.35];
+  const at = (t) => { const u = 1 - t; const x = u*u*a[0] + 2*u*t*c[0] + t*t*b[0], y = u*u*a[1] + 2*u*t*c[1] + t*t*b[1]; return [y, x / k]; };
+  const trail = L.polyline([from], { renderer, color:"#d9d4c7", weight:3, opacity:0.75, dashArray:"2 6", interactive:false });
+  const glow = L.polyline([from], { renderer, color:"#ff9a3c", weight:6, opacity:0.25, interactive:false });
+  const head = L.marker(from, { icon: L.divIcon({ className:"warhead", html:"<span></span>", iconSize:null }), interactive:false, zIndexOffset:3000 });
+  let phase = 0; const pts = [from];
+  function step(){
+    const t = clock();
+    if (phase === 0) {                       // сирена
+      pad.setRadius(6 + 5 * Math.abs(Math.sin(t * Math.PI * 2)));
+      if (t >= NK_LAUNCH) { phase = 1; nukeFx.addLayer(glow); nukeFx.addLayer(trail); nukeFx.addLayer(head); }
     }
+    if (phase === 1) {                       // політ
+      const q = Math.min(1, (t - NK_LAUNCH) / (NK_IMPACT - NK_LAUNCH)), e = q < 0.5 ? 2 * q * q : 1 - Math.pow(-2 * q + 2, 2) / 2;   // розгін і падіння
+      const p = at(e); pts.push(p); trail.setLatLngs(pts); glow.setLatLngs(pts); head.setLatLng(p);
+      pad.setStyle({ opacity:Math.max(0, 1 - q * 3), fillOpacity:Math.max(0, 0.8 - q * 3) });
+      if (t >= NK_IMPACT) {
+        phase = 2; nukeFx.removeLayer(head); nukeFx.removeLayer(pad);
+        impact(to, T);
+        let o = 0.75; const fade = setInterval(() => { o -= 0.03; if (o <= 0) { clearInterval(fade); nukeFx.removeLayer(trail); nukeFx.removeLayer(glow); } else { trail.setStyle({ opacity:o }); glow.setStyle({ opacity:o / 3 }); } }, 150);
+      }
+    }
+    if (phase === 2 && t >= NK_END - 0.3) { if (audio) { try { audio.pause(); } catch (e) {} } if (done) done(); return; }
     requestAnimationFrame(step);
-  }, 1300);
+  }
+  requestAnimationFrame(step);
 }
+// вибух: спалах і кільця, що розходяться разом зі звуком (~7 с)
 function impact(to, T){
   const fl = document.getElementById("flash");
   fl.style.transition = "none"; fl.style.opacity = "0.92";
-  requestAnimationFrame(() => { fl.style.transition = "opacity .9s ease-out"; fl.style.opacity = "0"; });
-  const b = T.layer.getBounds(), R = Math.max(60000, Math.min(600000, b.getNorthEast().distanceTo(b.getSouthWest()) * 0.45));
-  [0, 350, 700].forEach((d, i) => setTimeout(() => {
-    const ring = L.circle(to, { renderer, radius:1, color:i ? "#ffd27a" : "#ffffff", weight:3, opacity:0.9, fill:i === 0, fillColor:"#ff7a2a", fillOpacity:0.35, interactive:false });
+  requestAnimationFrame(() => { fl.style.transition = "opacity 1.4s ease-out"; fl.style.opacity = "0"; });
+  const bb = T.layer.getBounds(), R = Math.max(60000, Math.min(600000, bb.getNorthEast().distanceTo(bb.getSouthWest()) * 0.45));
+  [0, 400, 900, 1600, 2600].forEach((d, i) => setTimeout(() => {
+    const ring = L.circle(to, { renderer, radius:1, color:i ? "#ffd27a" : "#ffffff", weight:3, opacity:0.9, fill:i === 0, fillColor:"#ff7a2a", fillOpacity:0.4, interactive:false });
     nukeFx.addLayer(ring);
-    const t0 = performance.now(), dur = 1600;
-    (function grow(now){ const t = Math.min(1, (now - t0) / dur); ring.setRadius(R * (0.15 + 0.85 * t)); ring.setStyle({ opacity:0.9 * (1 - t), fillOpacity:0.35 * (1 - t) });
+    const t0 = performance.now(), dur = i === 0 ? 4500 : 3200, rr = R * (i === 0 ? 0.8 : 1 + i * 0.12);
+    (function grow(now){ const t = Math.min(1, (now - t0) / dur); ring.setRadius(rr * (0.12 + 0.88 * (1 - Math.pow(1 - t, 2)))); ring.setStyle({ opacity:0.9 * (1 - t), fillOpacity:0.4 * (1 - t) });
       if (t < 1) requestAnimationFrame(grow); else nukeFx.removeLayer(ring); })(t0);
   }, d));
 }
@@ -1058,6 +1065,13 @@ function renderPanel(){
     h += "<div class='row'><span>Населення</span><span>" + popTxt(c.pop) + "</span></div>";
     h += "<div class='row'><span>Армія</span><span>" + full(c.army) + "</span></div>";
     if (c.nuke) h += "<div class='row'><span>Ядерна зброя</span><span>☢ є</span></div>";
+    if (!c.nuke) {
+      const um = Object.keys(S.countries).filter(x => x !== o && S.countries[x].nuke && (
+        (S.alliances || []).some(al => /воєн|військ|military/i.test(al.type || "") && (al.members || []).includes(o) && (al.members || []).includes(x)) ||
+        (S.treaties || []).some(t => (t.t === "defense" || t.t === "comprehensive") && ((t.a === o && t.b === x) || (t.b === o && t.a === x)))));
+      if (um.length) h += "<div class='row'><span>☂ Ядерна парасолька</span><span style='text-align:right'>" + um.map(x => esc(cname(x))).join(", ") + "</span></div>";
+    }
+    if (c.pariah) h += "<div class='row'><span>☢ Ядерний вигнанець</span><span style='color:#e2766c'>" + (c.pariah.sanct >= S.round ? "🚫 санкції " + c.pariah.n + " країн до раунду " + c.pariah.sanct + "<br>" : "") + "світ пам'ятає до раунду " + c.pariah.until + "</span></div>";
     // арсенал: кругові шкали з іконкою, військова міць і програми
     if (c.ars) {
       const A = [["air","✈","авіація"],["navy","⚓","флот"],["missiles","🚀","ракети"],["drones","🛸","дрони"],["ad","🛡","ППО"],["mod","🔧","модернізація"]];
