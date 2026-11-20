@@ -302,6 +302,7 @@ function fmt(n){ n = Math.round(+n || 0); if (n >= 1e6) return (n/1e6).toFixed(n
 // населення (у млн) людською мовою: 73,6 млн · 40 тис. · 850 осіб
 function popTxt(mln){
   mln = +mln || 0;
+  if (mln >= 1000) return (mln / 1000).toFixed(2).replace(/\.?0+$/, "").replace(".", ",") + " млрд";
   if (mln >= 10) return mln.toFixed(1).replace(".0", "").replace(".", ",") + " млн";
   if (mln >= 1) return mln.toFixed(2).replace(/\.?0+$/, "").replace(".", ",") + " млн";
   if (mln >= 0.001) return Math.round(mln * 1000).toLocaleString("uk-UA") + " тис.";
