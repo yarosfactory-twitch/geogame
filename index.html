@@ -604,48 +604,55 @@ function nukeStart(n){
   const regs = Object.keys(owner).filter(r => owner[r] === n.attacker);
   return regs.length ? FEAT[regs[0]].p.c : null;
 }
-// послідовно всі удари (удар у відповідь — після першого)
+// хвилі: спершу всі перші удари одночасно під один звук, потім усі удари у відповідь
 function playNukes(list, done){
-  const n = list.shift(); if (!n) { if (done) done(); return; }
-  launchNuke(n, () => setTimeout(() => playNukes(list, done), 600));
+  const w1 = list.filter(n => !n.retaliation), w2 = list.filter(n => n.retaliation);
+  const waves = [w1, w2].filter(w => w.length);
+  (function next(){ const w = waves.shift(); if (!w) { if (done) done(); return; } launchNukes(w, () => setTimeout(next, 600)); })();
 }
-function launchNuke(n, done){
-  const T = FEAT[n.region], from = nukeStart(n);
-  if (!T || !from) { if (done) done(); return; }
-  if (SITE) { flyTo([n.region]); if (done) setTimeout(done, 1500); return; }   // на сайті без звуку й анімації
-  const to = T.p.c;
+function launchNukes(list, done){
+  const shots = [];
+  for (const n of list) { const T = FEAT[n.region], from = nukeStart(n); if (T && from) shots.push({ T, from, to:T.p.c }); }
+  if (!shots.length) { if (done) done(); return; }
+  if (SITE) { flyTo(list.map(n => n.region)); if (done) setTimeout(done, 1500); return; }   // на сайті без звуку й анімації
   // звук; якщо не грає — той самий таймлайн за годинником
   let audio = null, audioOk = false; const t0 = performance.now();
   try { audio = new Audio("nuke.mp3"); audio.volume = 0.9; audio.addEventListener("playing", () => { audioOk = true; }); audio.play().catch(() => {}); } catch (e) {}
   const clock = () => audioOk && audio && !audio.ended ? audio.currentTime : (performance.now() - t0) / 1000;
-  map.flyToBounds(L.latLngBounds([from, to]).pad(0.35), { maxZoom:6, duration:2.4 });
-  // сирена: пульсує точка пуску
-  const pad = L.circleMarker(from, { renderer, radius:6, color:"#ff3b2f", weight:2, fillColor:"#ff3b2f", fillOpacity:0.8, interactive:false });
-  nukeFx.addLayer(pad);
-  const k = Math.cos((from[0] + to[0]) / 2 * Math.PI / 180) || 1;
-  const a = [from[1] * k, from[0]], b = [to[1] * k, to[0]];
-  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-  let nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len; if (ny < 0) { nx = -nx; ny = -ny; }   // дуга вигинається «вгору» (на північ)
-  const c = [(a[0] + b[0]) / 2 + nx * len * 0.35, (a[1] + b[1]) / 2 + ny * len * 0.35];
-  const at = (t) => { const u = 1 - t; const x = u*u*a[0] + 2*u*t*c[0] + t*t*b[0], y = u*u*a[1] + 2*u*t*c[1] + t*t*b[1]; return [y, x / k]; };
-  const trail = L.polyline([from], { renderer, color:"#d9d4c7", weight:3, opacity:0.75, dashArray:"2 6", interactive:false });
-  const glow = L.polyline([from], { renderer, color:"#ff9a3c", weight:6, opacity:0.25, interactive:false });
-  const head = L.marker(from, { icon: L.divIcon({ className:"warhead", html:"<span></span>", iconSize:null }), interactive:false, zIndexOffset:3000 });
-  let phase = 0; const pts = [from];
+  const pts0 = []; shots.forEach(x => { pts0.push(x.from, x.to); });
+  map.flyToBounds(L.latLngBounds(pts0).pad(0.35), { maxZoom:6, duration:2.4 });
+  for (const x of shots) {
+    const from = x.from, to = x.to;
+    x.pad = L.circleMarker(from, { renderer, radius:6, color:"#ff3b2f", weight:2, fillColor:"#ff3b2f", fillOpacity:0.8, interactive:false });
+    nukeFx.addLayer(x.pad);
+    const k = Math.cos((from[0] + to[0]) / 2 * Math.PI / 180) || 1;
+    const a = [from[1] * k, from[0]], b = [to[1] * k, to[0]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    let nx = -(b[1] - a[1]) / len, ny = (b[0] - a[0]) / len; if (ny < 0) { nx = -nx; ny = -ny; }   // дуга вигинається «вгору» (на північ)
+    const c = [(a[0] + b[0]) / 2 + nx * len * 0.35, (a[1] + b[1]) / 2 + ny * len * 0.35];
+    x.at = (t) => { const u = 1 - t; const xx = u*u*a[0] + 2*u*t*c[0] + t*t*b[0], y = u*u*a[1] + 2*u*t*c[1] + t*t*b[1]; return [y, xx / k]; };
+    x.trail = L.polyline([from], { renderer, color:"#d9d4c7", weight:3, opacity:0.75, dashArray:"2 6", interactive:false });
+    x.glow = L.polyline([from], { renderer, color:"#ff9a3c", weight:6, opacity:0.25, interactive:false });
+    x.head = L.marker(from, { icon: L.divIcon({ className:"warhead", html:"<span></span>", iconSize:null }), interactive:false, zIndexOffset:3000 });
+    x.pts = [from];
+  }
+  let phase = 0;
   function step(){
     const t = clock();
     if (phase === 0) {                       // сирена
-      pad.setRadius(6 + 5 * Math.abs(Math.sin(t * Math.PI * 2)));
-      if (t >= NK_LAUNCH) { phase = 1; nukeFx.addLayer(glow); nukeFx.addLayer(trail); nukeFx.addLayer(head); }
+      for (const x of shots) x.pad.setRadius(6 + 5 * Math.abs(Math.sin(t * Math.PI * 2)));
+      if (t >= NK_LAUNCH) { phase = 1; for (const x of shots) { nukeFx.addLayer(x.glow); nukeFx.addLayer(x.trail); nukeFx.addLayer(x.head); } }
     }
     if (phase === 1) {                       // політ
       const q = Math.min(1, (t - NK_LAUNCH) / (NK_IMPACT - NK_LAUNCH)), e = q < 0.5 ? 2 * q * q : 1 - Math.pow(-2 * q + 2, 2) / 2;   // розгін і падіння
-      const p = at(e); pts.push(p); trail.setLatLngs(pts); glow.setLatLngs(pts); head.setLatLng(p);
-      pad.setStyle({ opacity:Math.max(0, 1 - q * 3), fillOpacity:Math.max(0, 0.8 - q * 3) });
+      for (const x of shots) {
+        const p = x.at(e); x.pts.push(p); x.trail.setLatLngs(x.pts); x.glow.setLatLngs(x.pts); x.head.setLatLng(p);
+        x.pad.setStyle({ opacity:Math.max(0, 1 - q * 3), fillOpacity:Math.max(0, 0.8 - q * 3) });
+      }
       if (t >= NK_IMPACT) {
-        phase = 2; nukeFx.removeLayer(head); nukeFx.removeLayer(pad);
-        impact(to, T);
-        let o = 0.75; const fade = setInterval(() => { o -= 0.03; if (o <= 0) { clearInterval(fade); nukeFx.removeLayer(trail); nukeFx.removeLayer(glow); } else { trail.setStyle({ opacity:o }); glow.setStyle({ opacity:o / 3 }); } }, 150);
+        phase = 2;
+        for (const x of shots) { nukeFx.removeLayer(x.head); nukeFx.removeLayer(x.pad); impact(x.to, x.T); }
+        let o = 0.75; const fade = setInterval(() => { o -= 0.03; if (o <= 0) { clearInterval(fade); for (const x of shots) { nukeFx.removeLayer(x.trail); nukeFx.removeLayer(x.glow); } } else for (const x of shots) { x.trail.setStyle({ opacity:o }); x.glow.setStyle({ opacity:o / 3 }); } }, 150);
       }
     }
     if (phase === 2 && t >= NK_END - 0.3) { if (audio) { try { audio.pause(); } catch (e) {} } if (done) done(); return; }
@@ -1208,9 +1215,13 @@ function nukesFor(a, regs){
   S.last_round.nukes.forEach((n, i) => {
     const key = S.last_round.round + ":" + i;
     if (playedNukes.has(key)) return;
-    if (regs.includes(n.region) || (/ЯДЕР|☢/.test(ttl) && (cs.includes(n.attacker) || cs.includes(n.owner)))) { playedNukes.add(key); res.push(n); }
+    if (regs.includes(n.region) || (/ЯДЕР|☢/.test(ttl) && (cs.includes(n.attacker) || cs.includes(n.owner)))) res.push(n);
   });
-  return res;
+  if (!res.length) return res;
+  // стаття про будь-який удар запускає всі удари раунду: перша хвиля разом, удари у відповідь — другою хвилею
+  const all = [];
+  S.last_round.nukes.forEach((n, i) => { const key = S.last_round.round + ":" + i; if (!playedNukes.has(key)) { playedNukes.add(key); all.push(n); } });
+  return all;
 }
 function startPlayback(round, pending){
   stopPlayback();
