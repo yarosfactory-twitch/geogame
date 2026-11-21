@@ -191,6 +191,7 @@
   <button class="btn" id="bTr" title="Двосторонні договори">📜 Договори</button>
   <button class="btn" id="bRes" title="Ресурси регіонів">⛏ Ресурси</button>
   <button class="btn" id="bMkt" title="Біржа">📈 Біржа</button>
+  <button class="btn" id="bWar" title="Війни">⚔ Війни</button>
   <button class="btn" id="bPl" title="Гравці">👥 Гравці</button>
   <button class="btn siteonly" id="bRelM" title="Відносини твоєї країни" style="display:none">🤝 Відносини</button>
   <button class="btn siteonly" id="bMe" title="Моя країна">👤 Увійти</button>
@@ -1101,6 +1102,8 @@ function renderPanel(){
         (S.treaties || []).some(t => (t.t === "defense" || t.t === "comprehensive") && ((t.a === o && t.b === x) || (t.b === o && t.a === x)))));
       if (um.length) h += "<div class='row'><span>☂ Ядерна парасолька</span><span style='text-align:right'>" + um.map(x => esc(cname(x))).join(", ") + "</span></div>";
     }
+    const wr = (S.wars || []).filter(w => w.a === o || w.b === o);
+    if (wr.length) h += "<div class='row' style='cursor:pointer' onclick='showWars(\"" + o + "\")'><span>⚔ Воює з</span><span style='text-align:right'>" + wr.map(w => esc(cname(w.a === o ? w.b : w.a)) + (w.frozen ? " ❄" : "")).join(", ") + "</span></div>";
     if (c.pariah) h += "<div class='row'><span>☢ Ядерний вигнанець</span><span style='color:#e2766c'>" + (c.pariah.sanct >= S.round ? "🚫 санкції " + c.pariah.n + " країн до раунду " + c.pariah.sanct + "<br>" : "") + "світ пам'ятає до раунду " + c.pariah.until + "</span></div>";
     // арсенал: кругові шкали з іконкою, військова міць і програми
     if (c.ars) {
@@ -1506,6 +1509,27 @@ function kickPlayer(id, name){
   doAction(ACTION_CMD, { message:"!кік " + id, userId:"1467396782", user:"yarosfactory", userName:"yarosfactory", msgId:"" });
   toast("Знімаю " + name + " з ролі…"); setTimeout(() => requestState(300), 1500);
 }
+// ---------- війни ----------
+function warLine(w, focus){
+  const k = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace(".", ",") + " млн" : n >= 1e3 ? Math.round(n / 1e3) + " тис." : Math.round(n || 0);
+  const cb = w.cb === "legit" ? " <span title='законна причина' style='color:#5fd06a'>⚖</span>" : w.cb === "casus" ? " <span title='казус беллі' style='color:#e0b050'>🎭</span>" : "";
+  const nm = x => "<a href='#' onclick='event.stopPropagation();showWars(\"" + x + "\");return false' style='color:inherit;text-decoration:none;border-bottom:1px dotted #888'><span class='sw' style='background:" + colorOf(x) + "'></span>" + esc(cname(x)) + "</a>";
+  return "<div class='al' style='display:block;cursor:default'>" + (w.frozen ? "❄ " : "⚔ ") + nm(w.a) + " → " + nm(w.b) + cb +
+         "<div class='note' style='margin:2px 0 0'>з раунду " + w.started + (w.frozen ? " · заморожена" : "") + " · боїв " + (w.battles || 0) +
+         " · захоплено " + (w.ca || 0) + " / " + (w.cb_n || 0) + " рег. · втрати " + k(w.la) + " / " + k(w.lb) + "</div></div>";
+}
+function showWars(cid){
+  if (!S) return;
+  const all = (S.wars || []).filter(w => !cid || w.a === cid || w.b === cid).sort((x, y) => (x.frozen - y.frozen) || (y.battles - x.battles));
+  let h = "<h2>⚔ Війни" + (cid ? ": " + esc(cname(cid)) : "") + "</h2><div class='sub'>" + all.filter(w => !w.frozen).length + " активних, " + all.filter(w => w.frozen).length +
+          " заморожених · ⚖ законна причина · 🎭 казус беллі · клік по країні — її війни</div>";
+  if (cid) h += "<div class='note'><a href='#' onclick='showWars(null);return false'>← усі війни</a> · <a href='#' onclick='showCountry(\"" + cid + "\");return false'>картка країни</a></div>";
+  h += all.length ? all.map(w => warLine(w)).join("") : "<div class='note'>" + (cid ? "Ця країна ні з ким не воює" : "Зараз у світі немає воєн") + "</div>";
+  const ended = (S.wars_ended || []).filter(w => !cid || w.a === cid || w.b === cid).slice().reverse();
+  if (ended.length) h += "<h3>Завершені</h3>" + ended.map(w => "<div class='note'>" + esc(w.an || cname(w.a)) + " — " + esc(w.bn || cname(w.b)) + ": раунди " + w.started + "–" + w.ended + " · " + esc(w.end) + "</div>").join("");
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+}
 function showPlayers(){
   if (!S) return;
   if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
@@ -1585,6 +1609,7 @@ async function loadState(){
 }
 
 document.getElementById("bPl").onclick = showPlayers;
+document.getElementById("bWar").onclick = () => showWars(null);
 document.getElementById("bMe").onclick = showMe;
 document.getElementById("bRelM").onclick = showRelations;
 document.getElementById("chead").addEventListener("click", e => { if (innerWidth <= 820 && !e.target.closest("button")) document.getElementById("chron").classList.toggle("open"); });
