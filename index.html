@@ -141,6 +141,7 @@
   .dwh { position:relative; cursor:help; outline:none; }
   .whytip { display:none; position:absolute; right:0; bottom:130%; z-index:2000; background:#10161d; border:1px solid var(--gold); border-radius:6px; padding:8px 10px; min-width:230px; max-width:300px; font-size:12px; line-height:1.45; white-space:normal; text-align:left; box-shadow:0 6px 18px rgba(0,0,0,.6); color:var(--ink); font-weight:normal; }
   .dwh:hover .whytip, .dwh:focus .whytip { display:block; }
+  .kick { color:#e2554a; text-decoration:none; font-weight:700; margin-left:4px; }
   .dwh.dwr { position:static; }   /* відносини: підказка прив'язана до всього рядка, щоб не вилазила за панель */
   .al.relrow { position:relative; }
   .dwr .whytip { right:0; left:auto; bottom:100%; min-width:0; width:max-content; max-width:100%; }
@@ -235,7 +236,7 @@ try { ME = JSON.parse(localStorage.getItem("geoMe") || "null"); } catch (e) { ME
 let relMode = null;   // країна, з чиїх очей фарбуємо карту
 const NOCONN = SITE ? "Стан світу ще завантажується" : "Немає зв'язку зі Streamer.bot";
 const WS_URL = Q.get("ws") || "ws://127.0.0.1:8081/";
-const ACTION_ROUND = "GEO Раунд", ACTION_STATE = "GEO Стан";
+const ACTION_ROUND = "GEO Раунд", ACTION_STATE = "GEO Стан", ACTION_CMD = "GEO Команди";
 const ARTICLE_MIN_MS = 9000, ARTICLE_MAX_MS = 22000;
 
 const STAT_NAMES = { economy:"Економіка", stability:"Стабільність", education:"Освіта", medicine:"Медицина", innovation:"Інновації" };
@@ -1499,6 +1500,12 @@ function showMe(){
   document.getElementById("pbody").innerHTML = h;
   document.getElementById("panel").style.display = "block";
 }
+// кік з локальної мапи: команда «!кік ID» від імені стрімера через Streamer.bot WebSocket
+function kickPlayer(id, name){
+  if (!confirm("Зняти " + name + " з ролі?")) return;
+  doAction(ACTION_CMD, { message:"!кік " + id, userId:"1467396782", user:"yarosfactory", userName:"yarosfactory", msgId:"" });
+  toast("Знімаю " + name + " з ролі…"); setTimeout(() => requestState(300), 1500);
+}
 function showPlayers(){
   if (!S) return;
   if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
@@ -1508,7 +1515,11 @@ function showPlayers(){
   let h = "<h2>Гравці</h2><div class='sub'>" + n + " гравців у " + cs.length + " країнах · клік — країна на карті</div>";
   for (const c of cs) {
     h += "<div class='al' onclick='showCountry(\"" + c + "\")'><span><span class='sw' style='background:" + colorOf(c) + "'></span>" + esc(cname(c)) + "</span><span>" + S.countries[c].players.length + "</span></div>";
-    h += "<div class='note' style='margin:2px 0 8px'>" + S.countries[c].players.slice().sort((a, b) => a.role - b.role).map(x => esc(x.name) + " <span style='opacity:.7'>(" + esc(x.role_name) + ")</span>").join(", ") + "</div>";
+    h += "<div class='note' style='margin:2px 0 8px'>" + S.countries[c].players.slice().sort((a, b) => a.role - b.role).map(x => {
+      const idle = x.last != null && S.round - x.last >= 2 ? " <span style='color:#e2554a' title='не ходив " + (S.round - x.last) + " раунд(и)'>💤" + (S.round - x.last) + "</span>" : "";
+      const kick = !SITE && x.id ? " <a href='#' class='kick' title='зняти з ролі' onclick='event.stopPropagation();kickPlayer(\"" + x.id + "\",\"" + esc(x.name) + "\");return false'>✕</a>" : "";
+      return esc(x.name) + " <span style='opacity:.7'>(" + esc(x.role_name) + " · " + (x.moves || 0) + " ход.)</span>" + idle + kick;
+    }).join("<br>") + "</div>";
   }
   if (!cs.length) h += "<div class='note'>Поки ніхто не грає. Зайняти країну: <b>!роль Країна</b></div>";
   document.getElementById("pbody").innerHTML = h;
