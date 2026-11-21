@@ -1528,7 +1528,7 @@ function showWarMap(id){
   const w = (S.wars || []).find(x => x.id === id); if (!w) return;
   relMode = null; alFilter = null; resFilter = null; alOpen = null;
   warSides = { a: new Set(w.sa || [w.a]), b: new Set(w.sb || [w.b]) }; restyleAll();
-  toast("🟥 " + [...warSides.a].map(cname).join(", ") + "  ⚔  🟦 " + [...warSides.b].map(cname).join(", "));
+  toast("🟥 напад: " + warSides.a.size + " країн(и)  ⚔  🟦 оборона: " + warSides.b.size + " країн(и)");
 }
 function showWars(cid){
   if (!S) return;
