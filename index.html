@@ -176,6 +176,7 @@
     #ticker { display:none !important; }
     #busy, #toast { left:50%; }
   }
+.fortic{font-size:13px;line-height:13px;text-shadow:0 0 3px #000;opacity:.85;pointer-events:auto}
 </style>
 </head>
 <body>
@@ -887,6 +888,22 @@ function drawSieges(){
     m.bindTooltip("<b>Облога: " + esc(cname(op.country)) + " → " + esc(cname(op.owner)) + "</b><br>" + regs.map(r => esc(rname(r))).join(", "), { className:"rt" });
     siegeLayer.addLayer(m);
   }
+  // укріплення / мінування (🛡) і підірвані мости (💥)
+  const rnd = S.round || 0;
+  for (const [r, f] of Object.entries(S.fort || {})) {
+    if (!FEAT[r] || owner[r] !== f.by || rnd > (f.full || 0) + 2) continue;
+    const fade = rnd > f.full ? " (слабне)" : "";
+    const m = L.marker(FEAT[r].p.c, { icon: L.divIcon({ className:"fortic", html:"🛡", iconSize:null }), zIndexOffset:700 });
+    m.bindTooltip("<b>Укріплення / мінування</b><br>" + esc(rname(r)) + " · " + esc(cname(f.by)) + "<br>до раунду " + f.full + fade, { className:"rt" });
+    siegeLayer.addLayer(m);
+  }
+  for (const [r, f] of Object.entries(S.demol || {})) {
+    if (!FEAT[r] || owner[r] !== f.by || rnd > (f.until || 0)) continue;
+    const ll = [FEAT[r].p.c[0] - 0.4, FEAT[r].p.c[1] + 0.4];
+    const m = L.marker(ll, { icon: L.divIcon({ className:"fortic", html:"💥", iconSize:null }), zIndexOffset:710 });
+    m.bindTooltip("<b>Мости підірвано</b><br>" + esc(rname(r)) + " · " + esc(cname(f.by)) + "<br>сухопутна атака — лише половиною сил, до раунду " + f.until, { className:"rt" });
+    siegeLayer.addLayer(m);
+  }
 }
 function drawThreats(){
   threatLayer.clearLayers();
@@ -1146,6 +1163,18 @@ function renderPanel(){
   const t = troopsOf(selectedId);
   const tk = Object.keys(t);
   h += "<h3>Війська в регіоні</h3>" + (tk.length ? tk.map(k => "<div class='row'><span>" + esc(cname(k)) + "</span><span>" + full(t[k]) + "</span></div>").join("") : "<div class='note' style='margin-top:0'>немає</div>");
+  {
+    const rnd0 = S.round || 0, fo = (S.fort || {})[selectedId], de = (S.demol || {})[selectedId];
+    if (fo && fo.by === o && rnd0 <= (fo.full || 0) + 2) h += "<div class='row'><span>🛡 Укріплено</span><span>до раунду " + fo.full + (rnd0 > fo.full ? " (слабне)" : "") + "</span></div>";
+    if (de && de.by === o && rnd0 <= (de.until || 0)) h += "<div class='row'><span>💥 Мости підірвано</span><span>до раунду " + de.until + "</span></div>";
+    const myc = SITE ? myCountry() : null;
+    const rec = myc && myc !== o ? (S.recon || []).find(x => x.by === myc && x.est && x.est[selectedId]) : null;
+    if (rec) {
+      const e = rec.est[selectedId];
+      h += "<div class='row'><span>🔎 Щоб захопити</span><span>≈ " + full(e.lo) + "–" + full(e.hi) + "</span></div>" +
+           "<div class='note' style='margin-top:0'>розвідка до раунду " + rec.until + ", точність ±" + rec.acc + "%" + (e.fort ? " · 🛡 враховано укріплення" : "") + (e.demol ? " · 💥 мости підірвано — суходолом дійде лише половина" : "") + "</div>";
+    }
+  }
   if (o === "VACUUM") h += "<div class='note'>Регіон без влади. Сусіди можуть зайти сюди, а гравець — заснувати державу командою <b>!роль</b>.</div>";
   const c = S && S.countries[o];
   if (c) {
@@ -1698,8 +1727,8 @@ function showCommands(){
   h += tip("Стабільність", ["підвищити пенсії та зарплати лікарям і вчителям", "боротьба з корупцією в уряді", "укласти мир / перемир'я (війни й втрати її знижують)", "провести зачистку від партизан на окупованих землях", "загальнонаціональне свято / підтримка церкви", "не захоплювати більше, ніж встигаєш інтегрувати"]);
   h += tip("Освіта й інновації", ["збудувати університети й дати гранти науковцям", "програма обміну студентами з Японією", "фонд для стартапів ШІ та робототехніки"]);
   h += tip("Медицина", ["збудувати нові лікарні та закупити вакцини", "безкоштовна медицина для дітей"]);
-  h += tip("Армія", ["провести мобілізацію 100 тисяч", "модернізувати армію / розвивати авіацію, флот, ППО, дрони", "розмістити війська на кордоні з X", "наступ по всьому фронту на X", "атакувати регіон Y", "висадити десант на регіон Y"]);
-  h += tip("Дипломатія", ["запропонувати Франції оборонний договір / пакт про ненапад / мир", "запропонувати мир коаліції (усім ворогам одразу)", "вступити в союз X", "розірвати договір з X"]);
+  h += tip("Армія", ["провести мобілізацію 100 тисяч", "модернізувати армію / розвивати авіацію, флот, ППО, дрони", "розмістити війська на кордоні з X", "наступ по всьому фронту на X", "атакувати регіон Y", "висадити десант на регіон Y", "укріпити / замінувати кордон з X", "підірвати мости в регіоні Y", "посилити оборону узбережжя (проти десантів)", "провести розвідку кордону з X (покаже, скільки військ треба на захоплення)"]);
+  h += tip("Дипломатія", ["запропонувати Франції оборонний договір / пакт про ненапад / мир", "запропонувати мир коаліції (усім ворогам одразу)", "переконати X вийти з коаліції", "вступити в союз X", "розірвати договір з X"]);
   document.getElementById("pbody").innerHTML = h;
   document.getElementById("panel").style.display = "block";
 }
