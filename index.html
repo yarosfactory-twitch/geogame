@@ -1602,10 +1602,11 @@ function kickPlayer(id, name){
 function warLine(w, focus){
   const k = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace(".", ",") + " млн" : n >= 1e3 ? Math.round(n / 1e3) + " тис." : Math.round(n || 0);
   const cb = w.cb === "legit" ? " <span title='законна причина' style='color:#5fd06a'>⚖</span>" : w.cb === "casus" ? " <span title='казус беллі' style='color:#e0b050'>🎭</span>" : "";
-  const nm = x => "<a href='#' onclick='event.stopPropagation();showWars(\"" + x + "\");return false' style='color:inherit;text-decoration:none;border-bottom:1px dotted #888'><span class='sw' style='background:" + colorOf(x) + "'></span>" + esc(cname(x)) + "</a>";
+  const nm = x => "<a href='#' title='картка країни' onclick='event.stopPropagation();showCountry(\"" + x + "\");return false' style='color:inherit;text-decoration:none;border-bottom:1px dotted #888'><span class='sw' style='background:" + colorOf(x) + "'></span>" + esc(cname(x)) + "</a>";
+  const cl = x => "<a href='#' title='картка країни' onclick='event.stopPropagation();showCountry(\"" + x + "\");return false' style='color:inherit;text-decoration:none;border-bottom:1px dotted #888'>" + esc(cname(x)) + "</a>";
   const sa = (w.sa || [w.a]).filter(x => x !== w.a), sb = (w.sb || [w.b]).filter(x => x !== w.b);
-  const allies = (sa.length ? "<div class='note' style='margin:2px 0 0;color:#e07a6a'>з нападником: " + sa.map(x => esc(cname(x))).join(", ") + "</div>" : "") +
-                 (sb.length ? "<div class='note' style='margin:2px 0 0;color:#7aa8e0'>на захисті: " + sb.map(x => esc(cname(x))).join(", ") + "</div>" : "");
+  const allies = (sa.length ? "<div class='note' style='margin:2px 0 0;color:#e07a6a'>з нападником: " + sa.map(cl).join(", ") + "</div>" : "") +
+                 (sb.length ? "<div class='note' style='margin:2px 0 0;color:#7aa8e0'>на захисті: " + sb.map(cl).join(", ") + "</div>" : "");
   return "<div class='al' style='display:block;cursor:pointer' onclick='showWarMap(" + w.id + ")'>" + (w.frozen ? "❄ " : "⚔ ") + nm(w.a) + " → " + nm(w.b) + cb + allies +
          "<div class='note' style='margin:2px 0 0'>з раунду " + w.started + (w.frozen ? " · заморожена" : "") + " · боїв " + (w.battles || 0) +
          " · захоплено " + (w.ca || 0) + " / " + (w.cb_n || 0) + " рег. · втрати " + k(w.la) + " / " + k(w.lb) + "</div></div>";
@@ -1621,7 +1622,7 @@ function showWars(cid){
   if (warSides) { warSides = null; restyleAll(); }
   const all = (S.wars || []).filter(w => !cid || w.a === cid || w.b === cid).sort((x, y) => (x.frozen - y.frozen) || (y.battles - x.battles));
   let h = "<h2>⚔ Війни" + (cid ? ": " + esc(cname(cid)) : "") + "</h2><div class='sub'>" + all.filter(w => !w.frozen).length + " активних, " + all.filter(w => w.frozen).length +
-          " заморожених · ⚖ законна причина · 🎭 казус беллі · клік по війні — сторони на карті, по країні — її війни</div>";
+          " заморожених · ⚖ законна причина · 🎭 казус беллі · клік по війні — сторони на карті, по країні — її картка (там «⚔ Воює з» — усі її війни)</div>";
   if (cid) h += "<div class='note'><a href='#' onclick='showWars(null);return false'>← усі війни</a> · <a href='#' onclick='showCountry(\"" + cid + "\");return false'>картка країни</a></div>";
   h += all.length ? all.map(w => warLine(w)).join("") : "<div class='note'>" + (cid ? "Ця країна ні з ким не воює" : "Зараз у світі немає воєн") + "</div>";
   const ended = (S.wars_ended || []).filter(w => !cid || w.a === cid || w.b === cid).slice().reverse();
