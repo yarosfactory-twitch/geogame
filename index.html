@@ -711,6 +711,13 @@ function layoutBattles(){
       if (full && !x.w) { const el = x.m.getElement(); const sp = el && el.firstChild; if (sp && sp.offsetWidth) { x.w = sp.offsetWidth; x.h = sp.offsetHeight; } }
     }
   }
+  // маленькі іконки під показаним підписом ховаємо (подробиці — у підписі або при наближенні)
+  for (const x of battleMarks) {
+    if (x.isFull) { x.m.setOpacity(1); continue; }
+    const p = map.latLngToContainerPoint(x.ll);
+    const under = shown.some(q => p.x > q[0] && p.x < q[2] && p.y > q[1] && p.y < q[3]);
+    x.m.setOpacity(under ? 0 : 1);
+  }
 }
 map.on("zoomend", layoutBattles);
 
