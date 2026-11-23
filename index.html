@@ -193,6 +193,7 @@
   <button class="btn" id="bMkt" title="Біржа">📈 Біржа</button>
   <button class="btn" id="bWar" title="Війни">⚔ Війни</button>
   <button class="btn" id="bPl" title="Гравці">👥 Гравці</button>
+  <button class="btn" id="bCmd" title="Команди чату й поради до ходів">❓ Команди</button>
   <button class="btn siteonly" id="bRelM" title="Відносини твоєї країни" style="display:none">🤝 Відносини</button>
   <button class="btn siteonly" id="bMe" title="Моя країна">👤 Увійти</button>
   <div id="srch"><input id="q" type="text" placeholder="🔍 Країна, гравець або регіон" autocomplete="off"><span id="qx" title="Скинути">✕</span><div id="sugg"></div></div>
@@ -1094,7 +1095,8 @@ function renderPanel(){
     if (mc && mc !== o) h += "<div class='row'><span>Відносини з нами</span><span>" + relTxt(relOf(mc, o)) + "</span></div>";
     if (c.gov) h += "<div class='row'><span>Влада</span><span>" + esc(c.gov) + "</span></div>";
     if (c.cap && FEAT[c.cap]) h += "<div class='row'><span>Столиця</span><span>★ " + esc(rname(c.cap)) + "</span></div>";
-    if (c.lt || c.leader) h += "<div class='row'><span>Глава</span><span>" + esc(c.lt || "") + (c.leader ? " " + esc(c.leader) : "") + "</span></div>";
+    const ldr = (c.players || []).find(x => x.role === 0);
+    if (c.lt || c.leader || ldr) h += "<div class='row'><span>Глава</span><span>" + esc(c.lt || "") + (ldr ? " 🎮 " + esc(ldr.name) : c.leader ? " " + esc(c.leader) : "") + "</span></div>";
     if (c.rel) h += "<div class='row'><span>Релігія</span><span>⛪ " + esc(c.rel) + "</span></div>";
     h += "<div class='row'><span>Населення</span><span>" + popTxt(c.pop) + "</span></div>";
     h += "<div class='row'><span>Армія</span><span>" + full(c.army) + "</span></div>";
@@ -1105,8 +1107,32 @@ function renderPanel(){
         (S.treaties || []).some(t => (t.t === "defense" || t.t === "comprehensive") && ((t.a === o && t.b === x) || (t.b === o && t.a === x)))));
       if (um.length) h += "<div class='row'><span>☂ Ядерна парасолька</span><span style='text-align:right'>" + um.map(x => esc(cname(x))).join(", ") + "</span></div>";
     }
-    const wr = (S.wars || []).filter(w => w.a === o || w.b === o);
-    if (wr.length) h += "<div class='row' style='cursor:pointer' onclick='showWars(\"" + o + "\")'><span>⚔ Воює з</span><span style='text-align:right'>" + wr.map(w => esc(cname(w.a === o ? w.b : w.a)) + (w.frozen ? " ❄" : "")).join(", ") + "</span></div>";
+    // вороги з усіх воєн (і як союзник), коаліції / воєнні союзи — однією назвою
+    const en = [], frz = {}, via = {};
+    (S.wars || []).forEach(w => {
+      const sa = w.sa || [w.a], sb = w.sb || [w.b], mine = sa.includes(o) ? sa : sb.includes(o) ? sb : null;
+      if (!mine) return;
+      (mine === sa ? sb : sa).forEach(x => {
+        if (x === o || !S.countries[x]) return;
+        if (!en.includes(x)) en.push(x);
+        frz[x] = (frz[x] === undefined ? true : frz[x]) && !!w.frozen;
+        mine.forEach(y => { if (y !== o) (via[x] = via[x] || []).push(y); });
+      });
+    });
+    if (en.length) {
+      const milAl = (S.alliances || []).filter(al => /воєн|військ|military|коаліц|оборон/i.test((al.type || "") + " " + (al.name || "")));
+      let rest = en.slice(); const grp = [];
+      milAl.filter(al => !(al.members || []).includes(o)).sort((a, b) => (b.members || []).length - (a.members || []).length).forEach(al => {
+        const m = rest.filter(x => al.members.includes(x));
+        if (al.vs ? (al.vs === o && m.length >= 2) : m.length >= 3) { grp.push({ n: al.name, m }); rest = rest.filter(x => !m.includes(x)); }
+      });
+      const one = x => {
+        const al = milAl.find(a => (a.members || []).includes(o) && (via[x] || []).some(y => a.members.includes(y)));
+        return esc(cname(x)) + (frz[x] ? " ❄" : "") + (al ? " <span style='opacity:.7'>(у складі «" + esc(al.name) + "»)</span>" : "");
+      };
+      const parts = grp.map(g => "<b>" + esc(g.n) + "</b> (" + g.m.length + ") <span style='cursor:pointer;opacity:.8' onclick='event.stopPropagation();const d=this.nextElementSibling;d.style.display=d.style.display===\"none\"?\"block\":\"none\";this.textContent=d.style.display===\"none\"?\"▸\":\"▾\"'>▸</span><div style='display:none;font-size:.9em;opacity:.85'>" + g.m.map(x => esc(cname(x)) + (frz[x] ? " ❄" : "")).join(", ") + "</div>").concat(rest.map(one));
+      h += "<div class='row' style='cursor:pointer' onclick='showWars(\"" + o + "\")'><span>⚔ Воює з</span><span style='text-align:right'>" + parts.join(", ") + "</span></div>";
+    }
     if (c.pariah) h += "<div class='row'><span>☢ Ядерний вигнанець</span><span style='color:#e2766c'>" + (c.pariah.sanct >= S.round ? "🚫 санкції " + c.pariah.n + " країн до раунду " + c.pariah.sanct + "<br>" : "") + "світ пам'ятає до раунду " + c.pariah.until + "</span></div>";
     // арсенал: кругові шкали з іконкою, військова міць і програми
     if (c.ars) {
@@ -1563,6 +1589,60 @@ function showPlayers(){
   document.getElementById("panel").style.display = "block";
 }
 
+// ---------- довідка: команди чату й поради до ходів ----------
+function showCommands(){
+  if (selectedId && FEAT[selectedId]) FEAT[selectedId].layer.setStyle(styleFor(selectedId));
+  selectedId = null; if (relMode || alFilter || resFilter) { relMode = null; alFilter = null; resFilter = null; alOpen = null; restyleAll(); }
+  const sec = (t, rows) => "<h3>" + t + "</h3>" + rows.map(r => "<div style='margin:0 0 6px;line-height:1.35'><b style='color:#e9d9a6'>" + esc(r[0]) + "</b><br><span style='opacity:.85'>" + esc(r[1]) + "</span></div>").join("");
+  let h = "<h2>Команди</h2><div class='sub'>Пиши в чат Twitch. ⏳ — команда займає один із 3 ходів раунду</div>";
+  h += sec("Почати грати", [
+    ["!роль Країна [1–7]", "зайняти посаду: 1 лідер, 2 оборона, 3 економіка, 4 закордонні справи, 5 внутрішня політика, 6 медицина, 7 освіта і наука"],
+    ["!роль сіра N", "заснувати державу в сірій зоні (список — !сірі)"],
+    ["!ролі [Країна]", "хто на яких посадах"],
+    ["!покинути", "звільнити свою роль (3 раунди не можна в іншу країну)"]]);
+  h += sec("Ходи", [
+    ["!хід текст", "твій хід (до 3 за раунд), у чаті ховається"],
+    ["!скасувати [N]", "прибрати свій хід до підрахунку раунду"],
+    ["!мої", "скільки ходів лишилось і результати минулого раунду"],
+    ["!статус", "раунд і хто ще не походив"],
+    ["!вето [N]", "лідер скасовує хід міністра (відповіддю на хід або номером)"]]);
+  h += sec("Уряд", [
+    ["!звільнити N / нік", "лідер знімає міністра (3 раунди без повернення)"],
+    ["!заборона нік", "лідер забороняє гравцю брати роль у країні; без ніка — список"],
+    ["!дозволити нік", "зняти заборону"],
+    ["!недовіра", "міністри: 2/3 голосів за раунд — лідера знято"]]);
+  h += sec("Дипломатія", [
+    ["!пропозиція", "пропозиції твоїй країні"],
+    ["!пропозиція так|ні N", "відповісти на пропозицію ⏳"],
+    ["!пропозиція контр N умови", "зустрічна пропозиція ⏳"],
+    ["!договори [Країна]", "двосторонні договори"],
+    ["!союзи [Назва|Країна]", "союзи та їхні члени"],
+    ["!транзит заборонити|дозволити Країна", "прохід військ союзників (лідер, оборона, закордонні справи)"],
+    ["!біженці відкрити|закрити", "кордони для біженців (лідер, внутрішня політика)"]]);
+  h += sec("Війна й безпека", [
+    ["!зачистка так|ні", "продовжити ⏳ або припинити операцію на окупованих землях"],
+    ["!облога так|ні [N]", "продовжити ⏳ або зняти облогу / блокаду"],
+    ["!найманці [розпустити N]", "найманці країни (лідер, оборона)"],
+    ["!відповідь так|ні N", "ядерна парасолька: удар у відповідь за союзника ⏳ (лідер)"]]);
+  h += sec("Довідка", [
+    ["!країна [назва]", "коротко про країну"], ["!віра [назва]", "віри і хто їх сповідує"], ["!біржа [товар]", "ціни ресурсів"],
+    ["!сірі", "сірі зони"], ["!карта", "посилання на цей сайт"], ["!гео", "коротка довідка в чаті"]]);
+  if (!SITE) h += sec("Ведучий (лише ти)", [
+    ["▶ Симулювати", "порахувати раунд (кнопка вгорі)"], ["↶ Відкотити", "повернути попередній раунд"],
+    ["!подія текст", "подія ведучого в наступному раунді"], ["!кік нік", "зняти гравця з ролі без заборон (для АФК)"],
+    ["!дозволити нік", "зняти будь-яку заборону лідера"], ["!новийсвіт", "почати новий світ"]]);
+  const tip = (t, ex) => "<div class='note' style='margin:4px 0 8px'><b>" + t + "</b><br>" + ex.map(x => "· <i>" + esc(x) + "</i>").join("<br>") + "</div>";
+  h += "<h3>Як писати ходи</h3><div class='sub'>Один хід — одна конкретна справа. Чим реалістичніше й конкретніше, тим краще результат.</div>";
+  h += tip("Економіка", ["укласти економічну угоду з Польщею (дає дохід щораунду)", "збудувати порти й залізниці для експорту зерна", "знизити податки малому бізнесу", "залучити іноземні інвестиції в технопарки", "розвивати туризм на узбережжі", "скоротити армію (утримання великої армії з'їдає економіку)"]);
+  h += tip("Стабільність", ["підвищити пенсії та зарплати лікарям і вчителям", "боротьба з корупцією в уряді", "укласти мир / перемир'я (війни й втрати її знижують)", "провести зачистку від партизан на окупованих землях", "загальнонаціональне свято / підтримка церкви", "не захоплювати більше, ніж встигаєш інтегрувати"]);
+  h += tip("Освіта й інновації", ["збудувати університети й дати гранти науковцям", "програма обміну студентами з Японією", "фонд для стартапів ШІ та робототехніки"]);
+  h += tip("Медицина", ["збудувати нові лікарні та закупити вакцини", "безкоштовна медицина для дітей"]);
+  h += tip("Армія", ["провести мобілізацію 100 тисяч", "модернізувати армію / розвивати авіацію, флот, ППО, дрони", "розмістити війська на кордоні з X", "наступ по всьому фронту на X", "атакувати регіон Y", "висадити десант на регіон Y"]);
+  h += tip("Дипломатія", ["запропонувати Франції оборонний договір / пакт про ненапад / мир", "запропонувати мир коаліції (усім ворогам одразу)", "вступити в союз X", "розірвати договір з X"]);
+  document.getElementById("pbody").innerHTML = h;
+  document.getElementById("panel").style.display = "block";
+}
+
 // ---------- Twitch (implicit flow: токен лише в браузері, сайт дізнається тільки ID і нік) ----------
 function twitchLogin(){
   if (!S || !S.twitch_client) return toast("Вхід ще не налаштовано");
@@ -1601,15 +1681,40 @@ function olderRounds(){
 }
 async function loadOlder(){
   const rs = olderRounds().slice(0, 5); if (!rs.length) return;
-  for (const r of rs) { try { const x = await (await fetch("chron/" + S.world + "/" + r + ".json?v=" + (S.published || ""))).json(); ARCH[r] = x; } catch (e) { ARCH[r] = []; } }
+  for (const r of rs) { try { const cp = "chron/" + S.world + "/" + r + ".json"; let x; try { x = await (await fetch(cp + "?v=" + (S.published || ""))).json(); } catch (e) { if (!ghSha) throw e; x = await (await fetch(ghRaw(ghSha, cp))).json(); } ARCH[r] = x; } catch (e) { ARCH[r] = []; } }
   const keep = clist.scrollTop; mergeArchive(); renderChronicle(); clist.scrollTop = keep;
 }
 
 // ---------- завантаження стану ----------
 let lastPub = null;
+// Новий раунд без очікування збірки GitHub Pages: раз на 75 с питаємо API про останній коміт (ліміт — 60 запитів / год з IP)
+// і беремо state.json прямо з коміту через raw.githubusercontent.com. Pages лишається запасним шляхом.
+const GH = (() => { const h = location.hostname; if (!h.endsWith(".github.io")) return null; const repo = location.pathname.split("/").filter(Boolean)[0]; return repo ? { owner:h.split(".")[0], repo } : null; })();
+let ghSha = null, ghNext = 0;
+async function ghLatest(){
+  if (!GH || Date.now() < ghNext) return null;
+  ghNext = Date.now() + 75000;
+  try {
+    const r = await fetch("https://api.github.com/repos/" + GH.owner + "/" + GH.repo + "/commits/" + ((S && S.gh_branch) || "main"), { cache:"no-store" });
+    const left = r.headers.get("x-ratelimit-remaining"), reset = +r.headers.get("x-ratelimit-reset");
+    if (!r.ok || (left !== null && +left < 3)) { if (reset) ghNext = Math.max(ghNext, reset * 1000 + 5000); if (!r.ok) return null; }
+    const j = await r.json(); return j && j.sha || null;
+  } catch (e) { return null; }
+}
+const ghRaw = (sha, path) => "https://raw.githubusercontent.com/" + GH.owner + "/" + GH.repo + "/" + sha + "/" + path;
+async function fetchState(){
+  let d = null;
+  try { d = await (await fetch("state.json", { cache:"no-cache" })).json(); } catch (e) {}
+  const sha = await ghLatest();
+  if (sha && sha !== ghSha) {
+    try { const x = await (await fetch(ghRaw(sha, "state.json"))).json(); ghSha = sha; if (!d || String(x.published || "") > String(d.published || "")) d = x; } catch (e) {}
+  }
+  if (!d) throw new Error("state");
+  return d;
+}
 async function loadState(){
   try {
-    const d = await (await fetch("state.json?t=" + Date.now(), { cache:"no-store" })).json();
+    const d = await fetchState();
     if (d.published && d.published === lastPub) return;
     const first = !S; lastPub = d.published;
     for (const r in ARCH) if (!S || S.world !== d.world || +r >= d.round) delete ARCH[r];   // новий світ або відкат
@@ -1622,6 +1727,7 @@ async function loadState(){
 }
 
 document.getElementById("bPl").onclick = showPlayers;
+document.getElementById("bCmd").onclick = showCommands;
 document.getElementById("bWar").onclick = () => showWars(null);
 document.getElementById("bMe").onclick = showMe;
 document.getElementById("bRelM").onclick = showRelations;
@@ -1629,7 +1735,7 @@ document.getElementById("chead").addEventListener("click", e => { if (innerWidth
 
 if (window.TEST_PREV) { applyState(window.TEST_PREV); }
 if (window.TEST_STATE) { animateNext = !!window.TEST_PREV; applyState(window.TEST_STATE); }
-else if (SITE) { drawBorders(); rebuildLabels(); updateLabels(); renderTop(); loadState(); setInterval(loadState, 60000); document.addEventListener("visibilitychange", () => { if (!document.hidden) loadState(); }); }
+else if (SITE) { drawBorders(); rebuildLabels(); updateLabels(); renderTop(); loadState(); setInterval(loadState, 15000); document.addEventListener("visibilitychange", () => { if (!document.hidden) loadState(); }); }
 else { drawBorders(); rebuildLabels(); updateLabels(); renderTop(); connect(); }
 </script>
 </body>
