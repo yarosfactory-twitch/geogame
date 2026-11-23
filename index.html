@@ -693,6 +693,26 @@ function impact(to, T){
 
 const drawnBattles = new Set();
 let battlePts = [];
+// мітки боїв без накладань: важливі (столиці, великі армії) — з підписом, решта — маленька іконка (подробиці — наведенням)
+const battleMarks = [];
+function layoutBattles(){
+  const shown = [];
+  const order = battleMarks.slice().sort((a, c) => c.imp - a.imp);
+  for (const x of order) {
+    let full = !x.minor;
+    if (full) {
+      const p = map.latLngToContainerPoint(x.ll), w = x.w || 150, h = x.h || 38;
+      const box = [p.x - w / 2 - 3, p.y - h / 2 - 2, p.x + w / 2 + 3, p.y + h / 2 + 2];
+      for (const q of shown) if (!(box[2] < q[0] || box[0] > q[2] || box[3] < q[1] || box[1] > q[3])) { full = false; break; }
+      if (full) shown.push(box);
+    }
+    if (x.isFull !== full) {
+      x.m.setIcon(full ? x.full : x.small); x.isFull = full;
+      if (full && !x.w) { const el = x.m.getElement(); const sp = el && el.firstChild; if (sp && sp.offsetWidth) { x.w = sp.offsetWidth; x.h = sp.offsetHeight; } }
+    }
+  }
+}
+map.on("zoomend", layoutBattles);
 
 // ---------- стрілки наступу: дуга-«стрічка», що звужується до наконечника; роздвоєння з одного регіону й сходження в один ----------
 const arrowLayer = L.layerGroup().addTo(map);
@@ -790,16 +810,19 @@ function drawBattle(b, i){
   else if (src) { arrowList.push({ src, dst:T.p.c, skey:srcId, dkey:b.region, color, troops:+b.attackers || 0 }); drawArrows(); }
   const WPN = { missiles:"ракети", air:"авіація", drones:"дрони", navy:"флот" };
   const html = strike ? "<span>💥 удар · " + (WPN[b.strike] || "") + "<br><small>" + esc(cname(b.defender)) + " −" + fmt(b.defender_losses) + "</small></span>" : "<span>" + (win ? "⚔ захоплено" : "✖ відбито") + "<br><small>" + esc(cname(b.attacker)) + " −" + fmt(b.attacker_losses) + " · " + esc(cname(b.defender)) + " −" + fmt(b.defender_losses) + "</small></span>";
-  // якщо поруч уже є мітка бою — зсуваємо нову нижче, щоб не накладались
-  let near = 0;
-  for (const q of battlePts) if (Math.abs(q[0] - T.p.c[0]) < 1.2 && Math.abs(q[1] - T.p.c[1]) < 2) near++;
   battlePts.push(T.p.c);
-  const icon = L.divIcon({ className:"battle " + (win ? "win" : "fail"), html, iconSize:null, iconAnchor:[0, -near * 40] });
-  const m = L.marker(T.p.c, { icon, zIndexOffset:1000 });
+  const cls = "battle " + (strike ? "win" : win ? "win" : "fail");
+  const icon = L.divIcon({ className:cls, html, iconSize:null });
+  const small = L.divIcon({ className:cls, html:"<span style='padding:0 3px;font-size:11px;opacity:.9'>" + (strike ? "💥" : win ? "⚔" : "✖") + "</span>", iconSize:null });
+  const isCap = Object.values(S.countries).some(c => c.cap === b.region);
+  const minor = !strike && (b.defender === "VACUUM" || (+b.defenders || 0) < 500) && !isCap;   // сірі зони й дрібні сутички — лише іконкою
+  const m = L.marker(T.p.c, { icon:small, zIndexOffset:isCap ? 1100 : 1000 });
   m.bindTooltip("<b>" + esc(b.region_name || T.p.n) + "</b><br>" + esc(cname(b.attacker)) + ": " + full(b.attackers) + " проти " + full(b.defenders) +
                 "<br>Втрати: " + full(b.attacker_losses) + " / " + full(b.defender_losses) +
                 (b.prisoners ? "<br>Полонені: " + full(b.prisoners) : "") + (b.civilian_deaths ? "<br>Цивільні: ≈" + full(b.civilian_deaths) : ""), { className:"rt" });
   battleLayer.addLayer(m);
+  battleMarks.push({ m, ll:T.p.c, full:icon, small, minor, isFull:false, imp:(isCap ? 1e12 : 0) + (strike ? 5e5 : 0) + (+b.attackers || 0) + 2 * (+b.defenders || 0) });
+  layoutBattles();
 }
 function battlesFor(regions){ if (!S || !S.last_round || !S.last_round.battles) return; S.last_round.battles.forEach((b, i) => { if (!regions || regions.includes(b.region)) drawBattle(b, i); }); }
 
@@ -1336,7 +1359,7 @@ document.getElementById("bPlay").onclick = () => {
 };
 document.getElementById("bNext").onclick = () => { if (play) nextArticle(1); };
 document.getElementById("bPrev").onclick = () => { if (play) nextArticle(-1); };
-document.getElementById("bReplay").onclick = () => { if (S && S.last_round && S.last_round.round) { battleLayer.clearLayers(); arrowList = []; arrowLayer.clearLayers(); drawnBattles.clear(); battlePts = []; playedNukes.clear(); startPlayback(S.last_round.round, null); } };
+document.getElementById("bReplay").onclick = () => { if (S && S.last_round && S.last_round.round) { battleLayer.clearLayers(); arrowList = []; arrowLayer.clearLayers(); drawnBattles.clear(); battlePts = []; battleMarks.length = 0; playedNukes.clear(); startPlayback(S.last_round.round, null); } };
 
 // =====================================================================
 //  СТАН
@@ -1352,7 +1375,7 @@ function applyState(d){
   for (const id in FEAT) newOwner[id] = S.regions[id] ? S.regions[id][0] : FEAT[id].p.o;
   for (const id in newOwner) if (newOwner[id] !== owner[id]) { pending[id] = newOwner[id]; changed++; }
 
-  battleLayer.clearLayers(); arrowList = []; arrowLayer.clearLayers(); drawnBattles.clear(); battlePts = []; playedNukes.clear(); hlLayer.clearLayers();
+  battleLayer.clearLayers(); arrowList = []; arrowLayer.clearLayers(); drawnBattles.clear(); battlePts = []; battleMarks.length = 0; playedNukes.clear(); hlLayer.clearLayers();
   renderTop(); renderChronicle(); drawThreats(); drawNukes(); renderTicker(); drawRes();
 
   if (animate && S.last_round && S.last_round.round) {
