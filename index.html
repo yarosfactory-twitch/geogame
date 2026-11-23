@@ -30,6 +30,8 @@
                font-size:12px; font-weight:700; box-shadow:0 0 0 1px #0009, 0 2px 6px #0008; text-align:center; }
   .battle.win span { background:#2f5f33; color:#e8ffe6; }
   .battle.fail span { background:#6b2a26; color:#ffe9e6; }
+  .lnk { cursor:pointer; text-decoration:underline dotted; text-underline-offset:2px; }
+  .lnk:hover { color:#f3d27a; }
   .battle small { font-weight:400; opacity:.85; }
   .threat span { background:#8a5a12; color:#fff3d6; animation:pulse 1.4s infinite; }
   .threat.war span { background:#7d1f1a; }
@@ -314,7 +316,35 @@ function popTxt(mln){
 }
 function full(n){ return Math.round(+n || 0).toLocaleString("uk-UA"); }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
-function md(s){ return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>"); }
+function md(s){ return esc(s).replace(/\*\*(.+?)\*\*/g, (m, t) => nameIds(t) ? "<b class='lnk' data-q=\"" + t + "\">" + t + "</b>" : "<b>" + t + "</b>").replace(/\n/g, "<br>"); }
+// назва регіону / країни → id регіонів (для переходу кліком); відмінки — за основою слова
+function nameIds(q){
+  if (!S || !q) return null;
+  const nz = x => String(x).toLowerCase().replace(/&#39;|&quot;|&amp;|['’ʼ"]/g, "").trim();
+  const t = nz(q); if (t.length < 3) return null;
+  const tw = t.split(/\s+/);
+  // слово за словом з урахуванням відмінків: «Емірату Тюфтель», «Індії», «Риму»; найкращий збіг — за довжиною спільного початку
+  const pre = (a, b) => { let k = 0; while (k < a.length && k < b.length && a[k] === b[k]) k++; return k; };
+  const score = n => { const nw = n.split(/\s+/); if (nw.length !== tw.length) return -1; let sc = 0;
+    for (let k = 0; k < nw.length; k++) { const a = nw[k], b = tw[k]; if (a === b) { sc += a.length + 2; continue; }
+      const p = pre(a, b), mn = Math.min(a.length, b.length);
+      if (Math.abs(a.length - b.length) > 3) return -1;
+      if (!(p === mn && Math.abs(a.length - b.length) <= 2) && !(mn >= 4 && p >= Math.max(3, mn - 2))) return -1;
+      sc += p; }
+    return sc; };
+  let best = null, bs = 0;
+  for (const id in FEAT) { const n = nz(rname(id)); if (n === t) return [id]; const v = score(n); if (v > bs) { bs = v; best = [id]; } }
+  for (const c in S.countries) {
+    const n = nz(cname(c)); const v = n === t ? 1e9 : score(n);
+    if (v >= bs && v > 0) { const r = Object.keys(FEAT).filter(id => owner[id] === c); if (r.length) { bs = v; best = r; if (v === 1e9) return r; } }
+  }
+  return best;
+}
+function goName(q){ const ids = nameIds(q); if (!ids) return; highlight(ids); flyTo(ids); }
+document.addEventListener("click", e => {
+  const el = e.target.closest && e.target.closest(".lnk"); if (!el) return;
+  e.stopPropagation(); if (el.dataset.id) { highlight([el.dataset.id]); flyTo([el.dataset.id]); } else goName(el.dataset.q);
+}, true);
 
 // =====================================================================
 //  КАРТА
@@ -1124,7 +1154,7 @@ function renderPanel(){
     const mc = SITE ? myCountry() : null;
     if (mc && mc !== o) h += "<div class='row'><span>Відносини з нами</span><span>" + relTxt(relOf(mc, o)) + "</span></div>";
     if (c.gov) h += "<div class='row'><span>Влада</span><span>" + esc(c.gov) + "</span></div>";
-    if (c.cap && FEAT[c.cap]) h += "<div class='row'><span>Столиця</span><span>★ " + esc(rname(c.cap)) + "</span></div>";
+    if (c.cap && FEAT[c.cap]) h += "<div class='row'><span>Столиця</span><span class='lnk' data-id='" + c.cap + "'>★ " + esc(rname(c.cap)) + "</span></div>";
     const ldr = (c.players || []).find(x => x.role === 0);
     if (c.lt || c.leader || ldr) h += "<div class='row'><span>Глава</span><span>" + esc(c.lt || "") + (ldr ? " 🎮 " + esc(ldr.name) : c.leader ? " " + esc(c.leader) : "") + "</span></div>";
     if (c.rel) h += "<div class='row'><span>Релігія</span><span>⛪ " + esc(c.rel) + "</span></div>";
