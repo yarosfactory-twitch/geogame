@@ -176,6 +176,8 @@
     #ticker { display:none !important; }
     #busy, #toast { left:50%; }
   }
+.fleetic span{background:rgba(10,30,60,.85);border:1px solid #6fa8dc;border-radius:8px;padding:0 4px;font-size:12px;color:#cfe3ff;white-space:nowrap}
+.bldi{font-size:11px;line-height:11px;letter-spacing:-1px;text-shadow:0 0 3px #000;white-space:nowrap;pointer-events:none}
 .fortic{font-size:13px;line-height:13px;text-shadow:0 0 3px #000;opacity:.85;pointer-events:auto}
 .cpy{cursor:pointer;font-size:.8em;opacity:.55;margin-left:4px;user-select:none;vertical-align:middle}.cpy:hover{opacity:1}
 </style>
@@ -925,9 +927,39 @@ function drawSieges(){
     siegeLayer.addLayer(m);
   }
 }
+// флоти: 🚢 біля узбережжя (лише ті, що не вдома); у дорозі — ⏳
+function drawFleets(){
+  const rnd = S.round || 0;
+  for (const [c, f] of Object.entries(S.fleets || {})) {
+    if (!f.at || !FEAT[f.at]) continue;
+    const go = (f.arrive || 0) > rnd, nv = Math.round(+((S.countries[c] || {}).ars || {}).navy || 0);
+    const ll = [FEAT[f.at].p.c[0] + 0.5, FEAT[f.at].p.c[1] - 0.6];
+    const m = L.marker(ll, { icon: L.divIcon({ className:"fleetic", html:"<span>🚢" + (go ? "⏳" : "") + " " + esc(cname(c)).slice(0, 14) + "</span>", iconSize:null }), zIndexOffset:960 });
+    m.bindTooltip("<b>Флот: " + esc(cname(c)) + "</b><br>сила " + nv + "<br>" + (go ? "пливе до «" + esc(rname(f.at)) + "», прибуде в раунді " + f.arrive : "біля узбережжя «" + esc(rname(f.at)) + "» (" + esc(cname(owner[f.at])) + ")") +
+      "<br>плацдарм: удари по регіону й сусідах ×1,5, десант легший", { className:"rt" });
+    siegeLayer.addLayer(m);
+  }
+}
+// споруди — лише при наближенні
+const BLD_IC = { hospital:"🏥", school:"🎓", factory:"🏭", power:"⚡", port:"⚓", rail:"🚆", science:"🔬", base:"🪖" };
+const BLD_UA = { hospital:"лікарня", school:"освіта", factory:"завод", power:"електростанція", port:"порт", rail:"залізниця / дороги", science:"наука", base:"військова база" };
+const bldLayer = L.layerGroup().addTo(map);
+function bldOf(r){ const m = {}; for (const b of (S.bld || [])) if (b.r === r) m[b.t] = (m[b.t] || 0) + 1; return m; }
+function drawBld(){
+  bldLayer.clearLayers();
+  if (!S || map.getZoom() < 5) return;
+  const b = map.getBounds().pad(0.1), by = {};
+  for (const x of (S.bld || [])) (by[x.r] = by[x.r] || []).push(x.t);
+  for (const x of (S.ruins || [])) if (x.round >= (S.round || 0) - 1) (by[x.r] = by[x.r] || []).push("ruin");
+  for (const r in by) { const F = FEAT[r]; if (!F || !b.contains(F.p.c)) continue;
+    const h = by[r].map(t => t === "ruin" ? "🏚" : BLD_IC[t] || "•").join("");
+    bldLayer.addLayer(L.marker([F.p.c[0] - 0.35, F.p.c[1]], { icon:L.divIcon({ className:"bldi", html:h, iconSize:null }), interactive:false, zIndexOffset:520 })); }
+}
+map.on("zoomend moveend", drawBld);
 function drawThreats(){
   threatLayer.clearLayers();
   drawSieges();
+  if (S) { drawFleets(); drawBld(); }
   if (!S || !S.threats) return;
   for (const t of S.threats) {
     let rid = t.region && FEAT[t.region] ? t.region : null;
@@ -1187,6 +1219,12 @@ function renderPanel(){
     const rnd0 = S.round || 0, fo = (S.fort || {})[selectedId], de = (S.demol || {})[selectedId];
     if (fo && fo.by === o && rnd0 <= (fo.full || 0) + 2) h += "<div class='row'><span>🛡 Укріплено</span><span>до раунду " + fo.full + (rnd0 > fo.full ? " (слабне)" : "") + "</span></div>";
     if (de && de.by === o && rnd0 <= (de.until || 0)) h += "<div class='row'><span>💥 Мости підірвано</span><span>до раунду " + de.until + "</span></div>";
+    const bm = bldOf(selectedId), bk = Object.keys(bm);
+    if (bk.length) h += "<div class='row'><span>Споруди</span><span style='text-align:right'>" + bk.map(t => (BLD_IC[t] || "") + " " + BLD_UA[t] + (bm[t] > 1 ? " ×" + bm[t] : "")).join("<br>") + "</span></div>";
+    const ru = (S.ruins || []).filter(x => x.r === selectedId && x.round >= rnd0 - 1);
+    if (ru.length) h += "<div class='row'><span>🏚 Зруйновано</span><span style='text-align:right'>" + ru.map(x => BLD_UA[x.t] || x.t).join(", ") + "</span></div>";
+    const fl = Object.entries(S.fleets || {}).filter(([c, f]) => f.at === selectedId);
+    if (fl.length) h += "<div class='row'><span>🚢 Флот біля берега</span><span style='text-align:right'>" + fl.map(([c, f]) => esc(cname(c)) + ((f.arrive || 0) > rnd0 ? " (пливе)" : "")).join("<br>") + "</span></div>";
     const myc = SITE ? myCountry() : null;
     const rec = myc && myc !== o ? (S.recon || []).find(x => x.by === myc && x.est && x.est[selectedId]) : null;
     if (rec) {
@@ -1253,6 +1291,8 @@ function renderPanel(){
         return "<div class='dial'><div class='ring' style='background:conic-gradient(var(--gold) " + v * 3.6 + "deg, #2a3646 0)'><span>" + k[1] + "</span></div><b>" + v + "</b>" + k[2] +
                (pr ? "<i>🏭 " + (pr.total - pr.left) + "/" + pr.total + "</i>" : "") + "</div>";
       }).join("") + "</div>";
+      const fl = (S.fleets || {})[o];
+      if ((+c.ars.navy || 0) >= 5) h += "<div class='row'><span>🚢 Флот</span><span style='text-align:right'>" + (fl && fl.at ? ((fl.arrive || 0) > (S.round || 0) ? "пливе до «" + esc(rname(fl.at)) + "»" : "біля «" + esc(rname(fl.at)) + "» (" + esc(cname(owner[fl.at])) + ")") : "вдома") + "</span></div>";
     }
     if (S.res) {
       const mine = {}; for (const id in S.res) if (owner[id] === o) { const g = S.res[id][0]; (mine[g] = mine[g] || []).push(S.res[id][1] + (S.regions[id] && S.regions[id][2] && S.regions[id][2] !== o ? "*" : "")); }
