@@ -177,6 +177,7 @@
     #busy, #toast { left:50%; }
   }
 .fortic{font-size:13px;line-height:13px;text-shadow:0 0 3px #000;opacity:.85;pointer-events:auto}
+.cpy{cursor:pointer;font-size:.8em;opacity:.55;margin-left:4px;user-select:none;vertical-align:middle}.cpy:hover{opacity:1}
 </style>
 </head>
 <body>
@@ -388,6 +389,25 @@ L.geoJSON(GEO.regions, {
 const BASE_OWNER = Object.assign({}, owner);
 
 // назва регіону: перейменована (зі стану гри) або стандартна
+// 📋 скопіювати точну назву (як її знає гра) — щоб вставити в хід
+function copyBtn(t){ return ' <span class="cpy" title="Скопіювати назву" data-c="' + esc(t) + '" onclick="copyName(event,this)">📋</span>'; }
+function copyName(ev, el){
+  ev.stopPropagation(); ev.preventDefault();
+  const t = el.getAttribute("data-c");
+  const done = () => { toast("Скопійовано ✓ " + t); setTimeout(() => { const el2 = document.getElementById("toast"); if (el2 && el2.textContent.startsWith("Скопійовано")) el2.style.display = "none"; }, 1500); };
+  const fallback = () => {
+    try {
+      const ta = document.createElement("textarea"); ta.value = t; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
+      const ok = document.execCommand("copy"); document.body.removeChild(ta);
+      if (ok) return done();
+    } catch (e) {}
+    // не вдалося — виділяємо назву, щоб скопіювати вручну
+    try { const r = document.createRange(); r.selectNodeContents(el.parentNode); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
+    toast("Не вдалося скопіювати — назву виділено, скопіюй вручну");
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done, fallback); else fallback();
+}
 function rname(id){ const r = S && S.regions[id]; return (r && r[4]) || (FEAT[id] ? FEAT[id].p.n : id); }
 function tipText(id){
   const p = FEAT[id].p, o = owner[id];
@@ -1155,9 +1175,9 @@ function renderPanel(){
   if (!selectedId) return;
   const p = FEAT[selectedId].p, o = owner[selectedId];
   const r = S && S.regions[selectedId];
-  let h = "<h2>" + esc(rname(selectedId)) + "</h2>";
+  let h = "<h2>" + esc(rname(selectedId)) + copyBtn(rname(selectedId)) + "</h2>";
   h += "<div class='sub'><span class='sw " + (o === "VACUUM" ? "grey" : "") + "' style='background:" + (o === "VACUUM" ? "" : colorOf(o)) + "'></span>" +
-       (o === "VACUUM" ? "Сіра зона — влади немає" : esc(cname(o))) + "</div>";
+       (o === "VACUUM" ? "Сіра зона — влади немає" : esc(cname(o)) + copyBtn(cname(o))) + "</div>";
   if (r && r[2] && r[2] !== o) h += "<div class='row'><span>Окупований</span><span>рідний: " + esc(cname(r[2])) + "</span></div>";
   if (r) h += "<div class='row'><span>Населення</span><span>" + popTxt(r[3]) + "</span></div>";
   const t = troopsOf(selectedId);
