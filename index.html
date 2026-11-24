@@ -1317,7 +1317,7 @@ function renderPanel(){
     }
     h += "<h3>Гравці</h3>" + (c.players && c.players.length
         ? c.players.slice().sort((a, b) => a.role - b.role).map(x => "<div class='row'><span>" + esc(x.name) + "</span><span>" + esc(x.role_name) + "</span></div>").join("")
-        : "<div class='note' style='margin-top:0'>Ніхто не грає — країна лише реагує. Зайняти: <b>!роль " + esc(cname(o)) + "</b></div>");
+        : "<div class='note' style='margin-top:0'>Ніхто не грає — країна лише реагує. Зайняти: <b>!роль " + esc(cname(o)) + "</b> або <b>!роль " + esc(cname(o)) + " N</b> (посада N: 1 лідер, 2 оборона, 3 економіка, 4 закордонні справи, 5 внутрішня політика, 6 медицина, 7 освіта і наука)</div>");
   }
   document.getElementById("pbody").innerHTML = h;
 }
@@ -1650,7 +1650,7 @@ function showMe(){
     const p = myPl(), c = myCountry();
     h = "<h2>" + esc(ME.name || ME.login) + "</h2>";
     if (!p || !c) {
-      h += "<div class='sub'>Ти ще не граєш.</div><div class='note' style='margin-top:0'>Займи країну в чаті: <b>!роль Країна</b> (або <b>!роль Країна N</b> для міністра).</div>";
+      h += "<div class='sub'>Ти ще не граєш.</div><div class='note' style='margin-top:0'>Займи країну в чаті: <b>!роль Країна</b> (або <b>!роль Країна N</b> для міністра: 1 лідер, 2 оборона, 3 економіка, 4 закордонні справи, 5 внутрішня політика, 6 медицина, 7 освіта і наука).</div>";
     } else {
       const C = S.countries[c], role = p[1];
       const title = role === 0 ? (C.lt || "Лідер") : ["лідер", "міністр оборони", "міністр економіки", "міністр закордонних справ", "міністр внутрішньої політики", "міністр медицини", "міністр освіти і науки"][role] || "";
@@ -1734,7 +1734,7 @@ function showPlayers(){
       return esc(x.name) + " <span style='opacity:.7'>(" + esc(x.role_name) + " · " + (x.moves || 0) + " ход.)</span>" + idle + kick;
     }).join("<br>") + "</div>";
   }
-  if (!cs.length) h += "<div class='note'>Поки ніхто не грає. Зайняти країну: <b>!роль Країна</b></div>";
+  if (!cs.length) h += "<div class='note'>Поки ніхто не грає. Зайняти країну: <b>!роль Країна</b> або <b>!роль Країна N</b> (посада N: 1 лідер, 2 оборона, 3 економіка, 4 закордонні справи, 5 внутрішня політика, 6 медицина, 7 освіта і наука)</div>";
   document.getElementById("pbody").innerHTML = h;
   document.getElementById("panel").style.display = "block";
 }
