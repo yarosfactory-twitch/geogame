@@ -1060,6 +1060,20 @@ function showReligions(sel){
 document.getElementById("bRel").onclick = () => showReligions(null);
 // ---------- двосторонні договори ----------
 const TR_UA = { defense:"⚔ оборонний", nonaggression:"🤝 ненапад", economic:"📈 економічна", comprehensive:"🔗 всебічний", ceasefire:"☮ перемир'я", peace:"🕊 мир", transit:"🚚 транзит" };
+// договори країни o: транзит з напрямком, взаємний — одним рядком
+function trFor(o){
+  const all = (S.treaties || []).filter(t => t.a === o || t.b === o), out = [], seen = {};
+  for (const t of all) {
+    const p = t.a === o ? t.b : t.a;
+    if (t.t === "transit" && t.host && t.guest) {
+      if (seen["tr" + p]) continue;
+      const back = all.some(x => x !== t && x.t === "transit" && x.host === t.guest && x.guest === t.host);
+      seen["tr" + p] = 1;
+      out.push([back ? "🚚 взаємний транзит" : t.guest === o ? "🚚 транзит через" : "🚚 пропускає", p]);
+    } else out.push([TR_UA[t.t] || t.t, p]);
+  }
+  return out;
+}
 function trLine(t){
   if (t.t === "transit") return esc(cname(t.guest)) + " через " + esc(cname(t.host));
   return esc(cname(t.a)) + " — " + esc(cname(t.b)) + (t.rep ? " · репарації " + esc(cname(t.rep.payer)) + " −" + t.rep.amount + "/раунд" : "") + (t.until ? " · до раунду " + t.until : "");
@@ -1299,8 +1313,8 @@ function renderPanel(){
       const gs = Object.keys(mine);
       if (gs.length) h += "<div class='row'><span>Ресурси</span><span style='text-align:right'>" + gs.map(g => g === "hub" ? mine[g].map(it => resIcon(g, it) + " " + esc(it)).join(", ") : RG[g][0] + " " + mine[g].map(esc).join(", ")).join("<br>") + "</span></div>";
     }
-    const myTr = (S.treaties || []).filter(t => t.a === o || t.b === o);
-    if (myTr.length) h += "<div class='row'><span>Договори</span><span style='text-align:right'>" + myTr.map(t => (TR_UA[t.t] || t.t) + " " + esc(cname(t.a === o ? t.b : t.a))).join("<br>") + "</span></div>";
+    const myTr = trFor(o);
+    if (myTr.length) h += "<div class='row'><span>Договори</span><span style='text-align:right'>" + myTr.map(x => x[0] + " " + esc(cname(x[1]))).join("<br>") + "</span></div>";
     h += "<div class='row'><span>Біженці</span><span>" + (c.rb ? "🚧 кордони закриті" : "🚪 приймає") + "</span></div>";
     if (c.merc) h += "<div class='row'><span>Найманці (ПВК)</span><span>💰 " + full(c.merc) + "</span></div>";
     else if (c.nprog != null) h += "<div class='row'><span>Ядерна програма</span><span>" + c.nprog + " / 5</span></div>";
@@ -1672,8 +1686,8 @@ function showMe(){
         h += "<h3>Мої операції</h3>" + ops.map(o => "<div class='row'><span>#" + o.id + " " + esc(OPN[o.type] || o.type) + " — " + esc(o.type === "strait_blockade" ? o.name : o.type === "naval_blockade" ? cname(o.target) : rname(o.target)) + "</span><span>" +
              (o.started === S.round ? "нова" : o.confirmed === S.round ? "✓ продовжено" : "<b style='color:#ffcf6b'>чекає !облога так " + o.id + "</b>") + "</span></div>").join("");
       }
-      const tr = (S.treaties || []).filter(t => t.a === c || t.b === c);
-      if (tr.length) h += "<h3>Договори</h3>" + tr.map(t => "<div class='row'><span>" + (TR_UA[t.t] || t.t) + "</span><span>" + esc(cname(t.a === c ? t.b : t.a)) + "</span></div>").join("");
+      const tr = trFor(c);
+      if (tr.length) h += "<h3>Договори</h3>" + tr.map(x => "<div class='row'><span>" + x[0] + "</span><span>" + esc(cname(x[1])) + "</span></div>").join("");
       h += "<div style='margin-top:14px'><button class='btn main' onclick='showRelations()'>🤝 Відносини на карті</button></div>";
     }
     h += "<div class='note'><a href='#' onclick='twitchLogout();return false' style='color:var(--muted)'>Вийти</a></div>";
